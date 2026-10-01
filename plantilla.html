@@ -451,6 +451,8 @@ function setFlip(b, f) {
 }
 function flipBar(b) { setFlip(b, 1 - b.flip); layout(); }
 function turnBar(b) {
+  // Mientras se arrastra: fija la capa en la que caerá al soltarla
+  if (drag?.bar === b && drag.moved) { drag.formLock = b.form === 'row' ? 'col' : 'row'; setForm(b, drag.formLock); return; }
   // Voltear: cambia de capa (fila <-> columna) en el mismo número de ranura si está libre
   if (!b.role) { setForm(b, b.form === 'row' ? 'col' : 'row'); return; }
   const role = b.role === 'row' ? 'col' : 'row';
@@ -537,16 +539,16 @@ canvas.addEventListener('pointermove', e => {
   const t = pt.add(drag.off);
   if (drag.bar) {
     drag.bar.target.copy(t).setY(LIFT);
-    const s = nearestSlot(drag.bar, t);
-    setForm(drag.bar, s ? s.role : drag.bar.form);
+    if (!drag.formLock) { const s = nearestSlot(drag.bar, t); setForm(drag.bar, s ? s.role : drag.bar.form); }
   } else drag.peg.target.copy(t).setY(LIFT + 0.4);
   canvas.style.cursor = 'grabbing';
 }, { capture: true });
 
 // Ranura más cercana; se prefiere la capa con la forma actual de la barra
-function nearestSlot(b, p) {
+function nearestSlot(b, p, only = null) {
   let best = null, bd = 1e9;
   for (const role of ['row', 'col']) for (let i = 0; i < 5; i++) {
+    if (only && role !== only) continue;
     const c = slotCenter(role, i);
     const d = Math.hypot(c.x - p.x, c.z - p.z) + (role === b.form ? 0 : 0.35);
     if (d < bd) { bd = d; best = { role, slot: i }; }
@@ -566,7 +568,7 @@ canvas.addEventListener('pointerup', e => {
     layout(); return;
   }
   if (d.bar) {
-    const b = d.bar, s = nearestSlot(b, b.target);
+    const b = d.bar, s = nearestSlot(b, b.target, d.formLock);
     if (s) {
       const occ = occupant(s.role, s.slot);
       if (occ && occ !== b) { occ.role = d.prev.role; occ.slot = d.prev.slot; }
@@ -603,11 +605,12 @@ $('bView').onclick = () => {
   camAnim = viewFit(topView ? VIEWTOP : VIEW3D);
   $('bViewLbl').textContent = topView ? '3D' : 'Planta';
 };
-let showLabels = true;
+let showLabels = false;
+labels.forEach(l => l.visible = false);
 $('bLabels').onclick = () => {
   showLabels = !showLabels;
   labels.forEach(l => l.visible = showLabels);
-  $('bLabelsLbl').textContent = showLabels ? 'Etiquetas' : 'Sin etiquetas';
+  $('bLabels').classList.toggle('primary', showLabels);
 };
 function flash(msg) {
   const w = $('win'); w.style.display = 'block'; w.style.background = 'var(--accent)';
