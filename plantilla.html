@@ -42,6 +42,12 @@
     left: 12px; padding: 8px 12px; border-radius: 10px; background: var(--glass); border: 1px solid var(--line);
     font-size: 13px; font-variant-numeric: tabular-nums; pointer-events: none;
   }
+  #solved {
+    right: 12px; display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 10px;
+    background: var(--glass); border: 1px solid var(--line); color: var(--ok); font-size: 13px; font-weight: 600;
+    font-variant-numeric: tabular-nums; pointer-events: none;
+  }
+  #solved svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
   #menuWrap { position: fixed; left: 12px; bottom: calc(var(--dh, 0px) + 12px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column-reverse; align-items: flex-start; gap: 8px; }
   #menu {
     display: flex; flex-direction: column; gap: 2px; padding: 6px; min-width: 190px;
@@ -117,6 +123,7 @@
 <div id="stage">
   <div id="status" class="float"></div>
   <div id="win"></div>
+  <div id="solved" class="float" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span id="solvedTxt"></span></div>
   <div id="tools" hidden>
     <button id="tFlip" aria-label="Girar 180°" title="Girar 180° (R)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg></button>
     <button id="tTurn" aria-label="Voltear" title="Voltear arriba/abajo (V)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v14"/><path d="M4 15l3 3 3-3"/><path d="M17 20V6"/><path d="M14 9l3-3 3 3"/></svg></button>
@@ -449,18 +456,15 @@ function layout() {
   $('status').textContent = `${st.aligned}/${DATA.pegs} alineados · ${st.pegsIn}/${DATA.pegs} clavijas`;
   const win = $('win');
   if (st.solved && !solvedByPlayer) unlockSolutions();
+  $('solved').hidden = !st.solved;
+  $('status').hidden = st.solved;
   if (st.solved) {
-    const si = matchSolution();
-    if (!win.dataset.shown) {
-      win.innerHTML = `Resuelto · solución ${si + 1} de ${DATA.solutions.length}<br><button id="bWinSols">Ver soluciones</button>`;
-      $('bWinSols').onclick = () => { openDrawer(); win.style.display = 'none'; };
-      win.dataset.shown = '1';
-    }
-    win.style.display = 'block'; win.style.background = '';
+    $('solvedTxt').textContent = `Resuelto · sol. ${matchSolution() + 1}/${DATA.solutions.length}`;
+    if (!flashing) win.style.display = 'none';
   } else if (st.placed === 10 && st.aligned === DATA.pegs) {
     win.textContent = 'Ahora mete las clavijas';
     win.style.display = 'block'; win.style.background = 'var(--accent)';
-  } else if (!flashing) { win.style.display = 'none'; delete win.dataset.shown; }
+  } else if (!flashing) win.style.display = 'none';
 }
 
 function setForm(b, form) {
