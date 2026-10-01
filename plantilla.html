@@ -29,14 +29,14 @@
   html, body { margin: 0; height: 100%; overflow: hidden; }
   html { touch-action: none; }   /* sin zoom ni scroll de página; los gestos son de la escena */
   body { background: var(--scene); color: var(--ink); font: 14px/1.5 var(--body); }
-  #stage { position: fixed; inset: 0; }
+  #stage { position: fixed; top: 0; left: var(--ml, 0px); right: 0; bottom: calc(var(--dh, 0px) + var(--mb, 0px)); }
   #stage canvas { display: block; width: 100%; height: 100%; touch-action: none; -webkit-user-select: none; user-select: none; }
   .float { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); }
   #status {
     left: 12px; padding: 8px 12px; border-radius: 10px; background: var(--glass); border: 1px solid var(--line);
     font-size: 13px; font-variant-numeric: tabular-nums; pointer-events: none;
   }
-  #menuWrap { position: absolute; left: 12px; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column-reverse; align-items: flex-start; gap: 8px; }
+  #menuWrap { position: fixed; left: 12px; bottom: calc(var(--dh, 0px) + 12px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column-reverse; align-items: flex-start; gap: 8px; }
   #menu {
     display: flex; flex-direction: column; gap: 2px; padding: 6px; min-width: 190px;
     max-height: calc(100dvh - 90px); overflow-y: auto; touch-action: pan-y;
@@ -62,33 +62,42 @@
   button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
   button.small { padding: 5px 10px; font-size: 13px; }
   button:disabled { opacity: .4; cursor: default; }
+  /* Soluciones: franja inferior con carrusel horizontal; la escena se encoge para quedar completa arriba */
   #drawer {
-    position: fixed; top: 0; right: 0; bottom: 0; width: min(380px, 100%); overflow-y: auto;
-    background: var(--panel); border-left: 1px solid var(--line); box-shadow: -10px 0 30px rgba(0,0,0,.2);
-    padding: calc(16px + env(safe-area-inset-top, 0px)) 16px calc(32px + env(safe-area-inset-bottom, 0px));
-    touch-action: pan-y;
+    position: fixed; left: 0; right: 0; bottom: 0;
+    background: var(--panel); border-top: 1px solid var(--line); border-radius: 16px 16px 0 0;
+    box-shadow: 0 -10px 30px rgba(0,0,0,.25);
+    padding: 10px 0 calc(10px + env(safe-area-inset-bottom, 0px)); max-height: 52%; overflow-y: auto;
   }
-  .drawer-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .drawer-head { display: flex; justify-content: space-between; align-items: center; padding: 0 16px; margin-bottom: 8px; }
   h2 { font: 600 13px/1.3 var(--body); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0; }
   .row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-  .card { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 10px; }
+  #solList {
+    display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; touch-action: pan-x;
+    padding: 0 16px 4px; scroll-padding: 0 16px; scrollbar-width: thin;
+  }
+  .card { flex: 0 0 184px; scroll-snap-align: start; border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
   .card.active { border-color: var(--accent); }
-  .card h3 { margin: 0 0 4px; font: 600 15px/1.3 var(--body); }
-  .scrollx { overflow-x: auto; }
-  table.mini { border-collapse: collapse; margin: 6px 0 10px; font-variant-numeric: tabular-nums; }
-  table.mini td, table.mini th { min-width: 34px; height: 26px; text-align: center; font-size: 12px; padding: 0 2px; }
+  .card h3 { margin: 0; font: 600 13px/1.3 var(--body); color: var(--muted); }
+  table.mini { border-collapse: collapse; margin: 6px 0 8px; font-variant-numeric: tabular-nums; }
+  table.mini td, table.mini th { width: 24px; height: 18px; text-align: center; font-size: 11px; padding: 0; }
   table.mini th { color: var(--muted); font-weight: 600; white-space: nowrap; }
   table.mini td { border: 1px solid var(--line); }
-  table.mini td.peg::after { content: ""; display: inline-block; width: 11px; height: 11px; border-radius: 50%; background: var(--pegs); border: 1px solid var(--pegs-edge); }
-  .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 3px; vertical-align: -1px; border: 1px solid rgba(0,0,0,.2); }
-  #stepBox { margin-bottom: 14px; }
-  #stepText { background: var(--chip); border-radius: 10px; padding: 10px 12px; margin: 8px 0; }
+  table.mini td.peg::after { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--pegs); border: 1px solid var(--pegs-edge); }
+  .sw { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 2px; vertical-align: 0; border: 1px solid rgba(0,0,0,.2); }
+  .card .row + .row { margin-top: 6px; }
+  .card .row { flex-wrap: nowrap; }
+  #stepBox { padding: 0 16px; }
+  #stepText { background: var(--chip); border-radius: 10px; padding: 8px 12px; margin: 0 0 8px; }
   #stepText b { display: block; }
   kbd { color: var(--muted); font: 12px var(--body); }
-  @media (max-width: 700px) {
-    #drawer { top: auto; left: 0; width: 100%; max-height: 46%; border-left: 0; border-top: 1px solid var(--line);
-              border-radius: 16px 16px 0 0; box-shadow: 0 -10px 30px rgba(0,0,0,.25); padding-top: 14px; }
-    kbd { display: none; }
+  @media (max-width: 700px) { kbd { display: none; } }
+  /* Celular: el menú se abre como barra horizontal sobre el botón */
+  @media (max-width: 600px) {
+    #menu { flex-direction: row; overflow-x: auto; max-width: calc(100vw - 24px); min-width: 0; touch-action: pan-x; scrollbar-width: none; }
+    #menu::-webkit-scrollbar { display: none; }
+    #menu button { white-space: nowrap; flex: 0 0 auto; }
+    #menu hr, #menu .hint { display: none; }
   }
 </style>
 <script type="importmap">
@@ -102,6 +111,7 @@
 <div id="stage">
   <div id="status" class="float"></div>
   <div id="win"></div>
+</div>
   <div id="menuWrap">
     <button id="bMenu" aria-expanded="false" aria-controls="menu">Menú</button>
     <div id="menu" hidden>
@@ -117,7 +127,6 @@
       <p class="hint">Arrastra para mover · doble toque para girar · dos dedos para zoom</p>
     </div>
   </div>
-</div>
 
 <aside id="drawer" hidden>
   <div class="drawer-head">
@@ -708,7 +717,7 @@ function unlockSolutions() {
 }
 try { if (localStorage.getItem('rompecabezas-resuelto') === '1') queueMicrotask(unlockSolutions); } catch {}
 
-const VARIANT_NAMES =['Tal cual', 'Girada 180°', 'Volteada', 'Volteada y girada'];
+const VARIANT_NAMES = ['A', 'B', 'C', 'D'];   // la misma solución tal cual, girada 180°, volteada, volteada y girada
 let famView = DATA.families.map(m => m[0]);   // solución visible por familia
 function renderSolutions() {
   $('solList').innerHTML = DATA.families.map((members, f) => {
@@ -716,11 +725,11 @@ function renderSolutions() {
     return `<div class="card" id="fam${f}">
       <h3>${f + 1}</h3>
       ${miniGrid(s)}
-      <div class="row" style="margin-bottom:8px">${members.map((m, k) =>
-        `<button class="small${m === si ? ' primary' : ''}" data-var="${f}:${m}">${VARIANT_NAMES[k] || k + 1}</button>`).join('')}</div>
+      <div class="row">${members.map((m, k) =>
+        `<button class="small${m === si ? ' primary' : ''}" data-var="${f}:${m}" title="Variante ${k + 1}">${VARIANT_NAMES[k] || k + 1}</button>`).join('')}</div>
       <div class="row">
-        <button data-show="${si}">Mostrar</button>
-        <button data-steps="${si}">Paso a paso</button>
+        <button class="small" data-show="${si}">Mostrar</button>
+        <button class="small" data-steps="${si}">Paso a paso</button>
       </div>
     </div>`;
   }).join('');
@@ -745,11 +754,25 @@ function markCard(f) { document.querySelectorAll('.card').forEach(c => c.classLi
 // ---------- Estrategia paso a paso ----------
 let steps = null, playTimer = null;
 function showStepBox() { $('stepBox').hidden = false; $('solList').hidden = true; }
-function openDrawer() { $('drawer').hidden = false; setMenu(false); }
+function openDrawer() { $('drawer').hidden = false; setMenu(false); refitSoon(); }
+// La escena ocupa solo el espacio que deja libre la franja de soluciones
+function syncDrawer() {
+  const h = $('drawer').hidden ? 0 : $('drawer').offsetHeight;
+  document.documentElement.style.setProperty('--dh', h + 'px');
+}
+function refitSoon() { userMovedCam = false; syncDrawer(); }
+new ResizeObserver(syncDrawer).observe($('drawer'));
 $('bSols').onclick = openDrawer;
-$('bCloseDrawer').onclick = () => { stopSteps(); closeSteps(); markCard(-1); $('drawer').hidden = true; };
+$('bCloseDrawer').onclick = () => { stopSteps(); closeSteps(); markCard(-1); $('drawer').hidden = true; refitSoon(); };
 // Menú desplegable: queda abierto hasta tocar "Menú" otra vez, para poder girar mientras se sostiene una pieza
-function setMenu(open) { $('menu').hidden = !open; $('bMenu').setAttribute('aria-expanded', open); $('bMenu').classList.toggle('primary', open); }
+function setMenu(open) {
+  $('menu').hidden = !open; $('bMenu').setAttribute('aria-expanded', open); $('bMenu').classList.toggle('primary', open);
+  // la escena se recorta a la derecha del menú y se vuelve a centrar
+  const narrow = matchMedia('(max-width: 600px)').matches, root = document.documentElement.style;
+  root.setProperty('--ml', open && !narrow ? ($('menu').offsetWidth + 24) + 'px' : '0px');
+  root.setProperty('--mb', open && narrow ? ($('menuWrap').offsetHeight + 16) + 'px' : '0px');
+  userMovedCam = false;
+}
 $('bMenu').onclick = () => setMenu($('menu').hidden);
 function startSteps(i) {
   steps = { i, k: 0 };
