@@ -27,6 +27,7 @@
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; }
+  html { touch-action: pan-x pan-y; }   /* sin zoom de página con pellizco; el zoom es solo de la escena */
   body {
     background: var(--bg); color: var(--ink); font: 14px/1.5 var(--body);
     display: grid; grid-template-columns: minmax(0, 1fr) 390px; overflow: hidden;
@@ -168,6 +169,10 @@ scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 200);
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true;
+// Celular: un dedo gira la cámara, dos dedos solo acercan/alejan
+controls.enablePan = false;
+controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+controls.zoomSpeed = 0.8;
 controls.maxPolarAngle = Math.PI * 0.47;
 controls.minDistance = 5; controls.maxDistance = 60;
 let portrait = false, camAnim = null, topView = false, userMovedCam = false;
@@ -511,13 +516,15 @@ function planePoint() {
 }
 
 canvas.addEventListener('pointerdown', e => {
+  // un segundo dedo mientras se sostiene una pieza no debe mover la cámara
+  if (drag) { e.stopImmediatePropagation(); e.preventDefault(); return; }
   if (e.button !== 0) return;
   const hit = pick(e);
   if (!hit) return;
   e.stopImmediatePropagation(); e.preventDefault();
   const obj = hit.bar || hit.peg, pos = (hit.bar ? obj.grp : obj.mesh).position;
   const pt = planePoint() || pos.clone();
-  drag = { ...hit, x: e.clientX, y: e.clientY, moved: false, off: pos.clone().sub(pt).setY(0),
+  drag = { ...hit, id: e.pointerId, x: e.clientX, y: e.clientY, moved: false, off: pos.clone().sub(pt).setY(0),
            prev: hit.bar ? { role: obj.role, slot: obj.slot } : null };
   try { canvas.setPointerCapture(e.pointerId); } catch {}
   if (hit.bar) selected = hit.bar;
@@ -525,8 +532,9 @@ canvas.addEventListener('pointerdown', e => {
 }, { capture: true });
 
 canvas.addEventListener('pointermove', e => {
-  if (!drag) { canvas.style.cursor = pick(e) ? 'grab' : 'default'; return; }
+  if (!drag) { if (e.pointerType === 'mouse') canvas.style.cursor = pick(e) ? 'grab' : 'default'; return; }
   e.stopImmediatePropagation();
+  if (e.pointerId !== drag.id) return;
   if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 5) return;
   if (!drag.moved) {
     drag.moved = true; stopSteps();
@@ -559,6 +567,7 @@ function nearestSlot(b, p, only = null) {
 canvas.addEventListener('pointerup', e => {
   if (!drag) return;
   e.stopImmediatePropagation();
+  if (e.pointerId !== drag.id) return;
   const d = drag; drag = null;
   if (!d.moved) {
     // doble toque / doble clic sobre la misma barra: girarla 180°
@@ -586,6 +595,11 @@ canvas.addEventListener('pointerup', e => {
 }, { capture: true });
 
 let lastTap = {};
+// si el sistema cancela el toque (p. ej. un gesto del navegador), se suelta la pieza ahí
+canvas.addEventListener('pointercancel', e => {
+  if (drag && e.pointerId === drag.id)
+    canvas.dispatchEvent(new PointerEvent('pointerup', { pointerId: e.pointerId, clientX: e.clientX, clientY: e.clientY }));
+}, { capture: true });
 addEventListener('keydown', e => {
   if (e.target.closest?.('input,textarea')) return;
   if ((e.key === 'r' || e.key === 'R') && selected) flipBar(selected);
