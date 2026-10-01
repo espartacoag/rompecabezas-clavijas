@@ -5,71 +5,74 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Rompecabezas de Clavijas</title>
 <style>
-  /* Layout: escena 3D con barra de herramientas abajo; panel de texto al lado (escritorio) o debajo (celular) */
+  /* Layout: escena 3D a pantalla completa; menú desplegable arriba a la derecha; soluciones en un panel que se abre al ganar */
   :root {
-    --bg: #f4efe7; --panel: #fffaf2; --ink: #2b211a; --muted: #7a6a5c; --line: #e3d7c6;
-    --accent: #a0522d; --accent-ink: #fff; --ok: #2f7d4f; --bad: #b3362b; --chip: #f1e6d6;
-    --glass: rgba(255, 250, 242, .9); --pegs: #b9bec5; --pegs-edge: #7f858d;
-    --display: var(--body);
+    --panel: #fffaf2; --ink: #2b211a; --muted: #7a6a5c; --line: #e3d7c6;
+    --accent: #a0522d; --accent-ink: #fff; --ok: #2f7d4f; --chip: #f1e6d6;
+    --glass: rgba(255, 250, 242, .92); --pegs: #b9bec5; --pegs-edge: #7f858d; --scene: #2a1f18;
     --body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-      --bg: #17120e; --panel: #211a15; --ink: #f1e7da; --muted: #b3a291; --line: #3a2f26;
-      --accent: #d98b52; --accent-ink: #1a120c; --ok: #5fbf85; --bad: #ef6b5e; --chip: #2d241d;
-      --glass: rgba(33, 26, 21, .9); color-scheme: dark;
+      --panel: #211a15; --ink: #f1e7da; --muted: #b3a291; --line: #3a2f26;
+      --accent: #d98b52; --accent-ink: #1a120c; --ok: #4fa873; --chip: #2d241d;
+      --glass: rgba(33, 26, 21, .92); color-scheme: dark;
     }
   }
   :root[data-theme="dark"] {
-    --bg: #17120e; --panel: #211a15; --ink: #f1e7da; --muted: #b3a291; --line: #3a2f26;
-    --accent: #d98b52; --accent-ink: #1a120c; --ok: #5fbf85; --bad: #ef6b5e; --chip: #2d241d;
-    --glass: rgba(33, 26, 21, .9); color-scheme: dark;
+    --panel: #211a15; --ink: #f1e7da; --muted: #b3a291; --line: #3a2f26;
+    --accent: #d98b52; --accent-ink: #1a120c; --ok: #4fa873; --chip: #2d241d;
+    --glass: rgba(33, 26, 21, .92); color-scheme: dark;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; }
-  html { touch-action: pan-x pan-y; }   /* sin zoom de página con pellizco; el zoom es solo de la escena */
-  body {
-    background: var(--bg); color: var(--ink); font: 14px/1.5 var(--body);
-    display: grid; grid-template-columns: minmax(0, 1fr) 390px; overflow: hidden;
-  }
-  #stage { position: relative; min-height: 0; min-width: 0; background: #2a1f18; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  html { touch-action: none; }   /* sin zoom ni scroll de página; los gestos son de la escena */
+  body { background: var(--scene); color: var(--ink); font: 14px/1.5 var(--body); }
+  #stage { position: fixed; inset: 0; }
   #stage canvas { display: block; width: 100%; height: 100%; touch-action: none; -webkit-user-select: none; user-select: none; }
+  .float { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); }
   #status {
-    position: absolute; left: 12px; top: 12px; padding: 6px 11px; border-radius: 10px;
-    background: var(--glass); border: 1px solid var(--line); font-size: 13px;
-    font-variant-numeric: tabular-nums; max-width: calc(100% - 24px); pointer-events: none;
+    left: 12px; padding: 8px 12px; border-radius: 10px; background: var(--glass); border: 1px solid var(--line);
+    font-size: 13px; font-variant-numeric: tabular-nums; pointer-events: none;
   }
-  #hud {
-    position: absolute; left: 0; right: 0; bottom: 0; display: flex; gap: 8px;
-    padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
-    overflow-x: auto; scrollbar-width: none;
+  #menuWrap { right: 12px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+  #menu {
+    display: flex; flex-direction: column; gap: 2px; padding: 6px; min-width: 190px;
+    background: var(--glass); border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.25);
   }
-  #hud::-webkit-scrollbar { display: none; }
-  #hud button { flex: 0 0 auto; white-space: nowrap; min-height: 44px; display: inline-flex; align-items: center; gap: 6px; }
+  #menu button { border: 0; background: transparent; text-align: left; display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 38px; padding: 6px 10px; }
+  #menu button:hover:not(:disabled) { background: var(--chip); }
+  #menu button.on { color: var(--accent); }
+  #menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 6px; width: auto; }
+  #menu .hint { color: var(--muted); font-size: 12px; padding: 4px 10px 6px; margin: 0; max-width: 200px; }
   #win {
-    position: absolute; left: 50%; top: 56px; transform: translateX(-50%); display: none;
-    background: var(--ok); color: #fff; padding: 12px 20px; border-radius: 14px; font-size: 17px;
-    font-weight: 600; box-shadow: 0 10px 30px rgba(0,0,0,.25); text-align: center; width: max-content; max-width: calc(100% - 32px);
+    position: absolute; left: 50%; top: calc(64px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); display: none;
+    background: var(--ok); color: #fff; padding: 12px 18px; border-radius: 14px; font-size: 16px; font-weight: 600;
+    box-shadow: 0 10px 30px rgba(0,0,0,.25); text-align: center; width: max-content; max-width: calc(100% - 32px);
   }
-  aside { background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; padding: 20px 20px 40px; min-width: 0; }
-  h1 { font: 800 24px/1.15 var(--display); margin: 0 0 8px; text-wrap: balance; letter-spacing: -.01em; }
-  h2 { font: 600 13px/1.3 var(--display); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 24px 0 8px; }
-  p { margin: 0 0 8px; }
-  .muted { color: var(--muted); }
+  #win button { margin-top: 8px; background: #fff; color: #1d4d31; border: 0; font-weight: 600; }
   button {
     font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
-    padding: 7px 12px; border-radius: 10px; cursor: pointer; touch-action: manipulation;
+    padding: 8px 12px; border-radius: 10px; cursor: pointer; touch-action: manipulation;
   }
-  button:hover { border-color: var(--accent); }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
-  button.small { padding: 5px 9px; font-size: 13px; }
-  button:disabled { opacity: .45; cursor: default; }
+  button.small { padding: 5px 10px; font-size: 13px; }
+  button:disabled { opacity: .4; cursor: default; }
+  #drawer {
+    position: fixed; top: 0; right: 0; bottom: 0; width: min(380px, 100%); overflow-y: auto;
+    background: var(--panel); border-left: 1px solid var(--line); box-shadow: -10px 0 30px rgba(0,0,0,.2);
+    padding: calc(16px + env(safe-area-inset-top, 0px)) 16px calc(32px + env(safe-area-inset-bottom, 0px));
+    touch-action: pan-y;
+  }
+  .drawer-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  h2 { font: 600 13px/1.3 var(--body); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0; }
   .row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
   .card { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 10px; }
-  .card.active { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent); }
-  .card h3 { margin: 0 0 4px; font: 600 16px/1.3 var(--display); }
-  .card .sub { color: var(--muted); font-size: 12.5px; margin-bottom: 4px; }
+  .card.active { border-color: var(--accent); }
+  .card h3 { margin: 0 0 4px; font: 600 15px/1.3 var(--body); }
   .scrollx { overflow-x: auto; }
   table.mini { border-collapse: collapse; margin: 6px 0 10px; font-variant-numeric: tabular-nums; }
   table.mini td, table.mini th { min-width: 34px; height: 26px; text-align: center; font-size: 12px; padding: 0 2px; }
@@ -77,22 +80,15 @@
   table.mini td { border: 1px solid var(--line); }
   table.mini td.peg::after { content: ""; display: inline-block; width: 11px; height: 11px; border-radius: 50%; background: var(--pegs); border: 1px solid var(--pegs-edge); }
   .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 3px; vertical-align: -1px; border: 1px solid rgba(0,0,0,.2); }
-  .ok-t { color: var(--ok); } .bad-t { color: var(--bad); }
-  ul.intro, ul.help { padding-left: 18px; margin: 6px 0; }
-  ul.intro li, ul.help li { margin-bottom: 5px; }
-  #stepBox { display: none; }
-  #stepText { min-height: 70px; background: var(--chip); border-radius: 10px; padding: 10px 12px; margin: 8px 0; }
-  #stepText b { display: block; margin-bottom: 4px; }
-  .pieces { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: 13px; }
-  kbd { background: var(--chip); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; font-size: 12px; }
-  @media (max-width: 820px) {
-    html, body { height: auto; }
-    body { grid-template-columns: minmax(0, 1fr); overflow: visible; }
-    #stage { height: 74svh; min-height: 440px; }
-    aside { border-left: 0; border-top: 1px solid var(--line); padding: 18px 16px 48px; }
-    .keys { display: none; }
+  #stepBox { margin-bottom: 14px; }
+  #stepText { background: var(--chip); border-radius: 10px; padding: 10px 12px; margin: 8px 0; }
+  #stepText b { display: block; }
+  kbd { color: var(--muted); font: 12px var(--body); }
+  @media (max-width: 700px) {
+    #drawer { top: auto; left: 0; width: 100%; max-height: 46%; border-left: 0; border-top: 1px solid var(--line);
+              border-radius: 16px 16px 0 0; box-shadow: 0 -10px 30px rgba(0,0,0,.25); padding-top: 14px; }
+    kbd { display: none; }
   }
-  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
 </style>
 <script type="importmap">
 { "imports": {
@@ -103,36 +99,40 @@
 </head>
 <body>
 <div id="stage">
-  <div id="status"></div>
+  <div id="status" class="float"></div>
   <div id="win"></div>
-  <div id="hud">
-    <button id="bFlip" title="R">Girar</button>
-    <button id="bTurn" title="V">Voltear</button>
-    <button id="bPegs">Clavijas</button>
-    <button id="bHint">Pista</button>
-    <button id="bShuffle">Mezclar</button>
-    <button id="bView"><span id="bViewLbl">Planta</span></button>
-    <button id="bLabels"><span id="bLabelsLbl">Etiquetas</span></button>
+  <div id="menuWrap" class="float">
+    <button id="bMenu" aria-expanded="false" aria-controls="menu">Menú</button>
+    <div id="menu" hidden>
+      <button id="bFlip">Girar <kbd>R</kbd></button>
+      <button id="bTurn">Voltear <kbd>V</kbd></button>
+      <button id="bPegs">Meter clavijas</button>
+      <button id="bHint">Pista</button>
+      <button id="bShuffle">Mezclar</button>
+      <hr>
+      <button id="bView"><span id="bViewLbl">Vista de planta</span></button>
+      <button id="bLabels">Etiquetas</button>
+      <button id="bSols" disabled>Soluciones</button>
+      <p class="hint">Arrastra para mover · doble toque para girar · dos dedos para zoom</p>
+    </div>
   </div>
 </div>
 
-<aside>
-  <p class="muted">Arrastra para mover · doble toque para girar</p>
-
-  <div id="stepBox">
-    <h2>Paso a paso</h2>
+<aside id="drawer" hidden>
+  <div class="drawer-head">
+    <h2>Soluciones</h2>
+    <button id="bCloseDrawer" class="small">Cerrar</button>
+  </div>
+  <div id="stepBox" hidden>
     <div id="stepText"></div>
-    <div class="row" id="stepBtns">
-      <button id="bPrev">Anterior</button>
-      <button id="bNext" class="primary">Siguiente</button>
-      <button id="bPlay">Reproducir</button>
-      <button id="bClose">Cerrar</button>
+    <div class="row">
+      <button id="bPrev" class="small">Anterior</button>
+      <button id="bNext" class="small primary">Siguiente</button>
+      <button id="bPlay" class="small">Reproducir</button>
+      <button id="bClose" class="small">Salir</button>
     </div>
   </div>
-
-  <h2>Soluciones</h2>
-  <p id="solLocked" class="muted">Disponibles al resolverlo.</p>
-  <div id="solList" hidden></div>
+  <div id="solList"></div>
 </aside>
 
 <script type="module">
@@ -175,26 +175,26 @@ controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
 controls.zoomSpeed = 0.8;
 controls.maxPolarAngle = Math.PI * 0.47;
 controls.minDistance = 5; controls.maxDistance = 60;
-let portrait = false, camAnim = null, topView = false, userMovedCam = false;
+let camAnim = null, topView = false, userMovedCam = false;
 const VIEW3D = { dir: new THREE.Vector3(0, 0.7, 0.72).normalize() };
 const VIEWTOP = { dir: new THREE.Vector3(0, 1, 0.02).normalize() };
 // Encuadre: busca la distancia mínima a la que el marco y las bandejas caben en pantalla
 function sceneBox() {
   const pts = [g(-0.9, -0.9), g(4.9, -0.9), g(4.9, 4.9), g(-0.9, 4.9)];
-  for (const b of BARS) for (const dx of [-2.8, 2.8]) for (const dz of [-0.5, 0.5]) pts.push(b.home.clone().add(new THREE.Vector3(dx, 0, dz)));
+  for (const b of BARS) for (const dx of [-1.6, 1.6]) for (const dz of [-2.3, 2.3]) pts.push(b.home.clone().add(new THREE.Vector3(dx, 0, dz)));
   for (const p of PEGS) pts.push(p.home.clone());
   return pts;
 }
 function viewFit(v) {
   const pts = sceneBox();
   const box = new THREE.Box3().setFromPoints(pts);
-  const tgt = box.getCenter(new THREE.Vector3()).setY(0);
+  const tgt = g(2, 2);   // la cámara siempre gira alrededor del tablero
   const cam = camera.clone();
   const fits = d => {
     cam.position.copy(tgt).addScaledVector(v.dir, d); cam.lookAt(tgt); cam.updateMatrixWorld();
     return pts.every(p => {
       const q = p.clone().setY(0.3).project(cam);
-      return Math.abs(q.x) < 0.94 && q.y > -0.74 && q.y < 0.84;   // deja sitio a la barra de botones y al marcador
+      return Math.abs(q.x) < 0.95 && q.y > -0.9 && q.y < 0.8;   // deja sitio al marcador y al menú
     });
   };
   let lo = 4, hi = 120;
@@ -365,19 +365,15 @@ for (let i = 0; i < DATA.pegs; i++) {
   PEGS.push({ i, mesh: m, cell: null, target: new THREE.Vector3(), home: new THREE.Vector3(), pending: null });
 }
 
-// ---------- Bandejas ----------
+// ---------- Bandejas: barras de pie a los lados del tablero, clavijas detrás ----------
 let homeOrder = [...BARS];
 function setHomes(order = homeOrder) {
   homeOrder = order;
   order.forEach((b, k) => {
-    const side = k < 5 ? 0 : 1, n = k % 5;
-    if (portrait) b.home.set(2.9, 0, 6.0 + k * 1.0);
-    else b.home.set(side ? 10.2 : -4.3, 0, -0.1 + n * 1.05);
+    const n = k % 5;
+    b.home.set(k < 5 ? -0.8 - (4 - n) * 1.08 : 6.6 + n * 1.08, 0, 1.8);
   });
-  PEGS.forEach((p, i) => {
-    if (portrait) p.home.set(1.6 + (i % 6) * 0.55 + Math.floor(i / 6) * 0.3, 0, -2.3 - Math.floor(i / 6) * 0.55);
-    else p.home.set(0.6 + (i % 6) * 0.55 + Math.floor(i / 6) * 0.3, 0, 5.4 + Math.floor(i / 6) * 0.55);
-  });
+  PEGS.forEach((p, i) => p.home.set(1.3 + (i % 6) * 0.55 + Math.floor(i / 6) * 0.3, 0, -2.0 - Math.floor(i / 6) * 0.55));
 }
 
 // ---------- Estado / reglas ----------
@@ -414,7 +410,7 @@ function layout() {
     if (drag?.bar === b && drag.moved) continue;
     if (!b.role) b.target.copy(b.home);
     else b.target.copy(slotCenter(b.role, b.slot)).setY(b.role === 'col' && anyRow ? T : 0);
-    setForm(b, b.role || 'row');
+    setForm(b, b.role || 'col');
   }
   for (const p of PEGS) {
     if (drag?.peg === p && drag.moved) continue;
@@ -436,12 +432,16 @@ function layout() {
   if (st.solved && !solvedByPlayer) unlockSolutions();
   if (st.solved) {
     const si = matchSolution();
-    win.innerHTML = `Resuelto<br><span style="font-size:14px;font-weight:400">Solución ${si + 1} de ${DATA.solutions.length}</span>`;
+    if (!win.dataset.shown) {
+      win.innerHTML = `Resuelto · solución ${si + 1} de ${DATA.solutions.length}<br><button id="bWinSols">Ver soluciones</button>`;
+      $('bWinSols').onclick = () => { openDrawer(); win.style.display = 'none'; };
+      win.dataset.shown = '1';
+    }
     win.style.display = 'block'; win.style.background = '';
   } else if (st.placed === 10 && st.aligned === DATA.pegs) {
     win.textContent = 'Ahora mete las clavijas';
     win.style.display = 'block'; win.style.background = 'var(--accent)';
-  } else if (!flashing) win.style.display = 'none';
+  } else if (!flashing) { win.style.display = 'none'; delete win.dataset.shown; }
 }
 
 function setForm(b, form) {
@@ -617,14 +617,14 @@ $('bHint').onclick = hint;
 $('bView').onclick = () => {
   topView = !topView; userMovedCam = false;
   camAnim = viewFit(topView ? VIEWTOP : VIEW3D);
-  $('bViewLbl').textContent = topView ? '3D' : 'Planta';
+  $('bViewLbl').textContent = topView ? 'Vista 3D' : 'Vista de planta';
 };
 let showLabels = false;
 labels.forEach(l => l.visible = false);
 $('bLabels').onclick = () => {
   showLabels = !showLabels;
   labels.forEach(l => l.visible = showLabels);
-  $('bLabels').classList.toggle('primary', showLabels);
+  $('bLabels').classList.toggle('on', showLabels);
 };
 function flash(msg) {
   const w = $('win'); w.style.display = 'block'; w.style.background = 'var(--accent)';
@@ -674,18 +674,13 @@ function hint() {
   stopSteps();
   const si = matchSolution(), sol = DATA.solutions[si];
   const step = sol.steps.find(s => (s.type === 'row' || s.type === 'col') && !stateMatches(sol, bars[s.id]));
-  showStepBox(false);
-  if (!step) {
-    insertPegs();
-    $('stepText').innerHTML = `<b>${sol.steps.at(-1).title}</b>`;
-    return;
-  }
+  if (!step) { insertPegs(); return; }
   const b = bars[step.id], occ = occupant(step.type, step.slot);
   const t = performance.now();
   if (occ && occ !== b) occ.pending = { role: null, slot: null, flip: occ.flip, at: t };
   b.pending = { role: step.type, slot: step.slot, flip: step.flip, at: t + 150 };
   selected = b;
-  $('stepText').innerHTML = `<b>Pista: ${step.title}</b>`;
+  flash(step.title);
 }
 
 // ---------- Panel ----------
@@ -707,8 +702,7 @@ function miniGrid(sol) {
 let solvedByPlayer = false;
 function unlockSolutions() {
   solvedByPlayer = true;
-  $('solLocked').hidden = true;
-  $('solList').hidden = false;
+  $('bSols').disabled = false;
   try { localStorage.setItem('rompecabezas-resuelto', '1'); } catch {}
 }
 try { if (localStorage.getItem('rompecabezas-resuelto') === '1') queueMicrotask(unlockSolutions); } catch {}
@@ -749,15 +743,18 @@ function markCard(f) { document.querySelectorAll('.card').forEach(c => c.classLi
 
 // ---------- Estrategia paso a paso ----------
 let steps = null, playTimer = null;
-function showStepBox(withButtons) {
-  $('stepBox').style.display = 'block';
-  $('stepBtns').style.display = withButtons ? '' : 'none';
-}
+function showStepBox() { $('stepBox').hidden = false; $('solList').hidden = true; }
+function openDrawer() { $('drawer').hidden = false; setMenu(false); }
+$('bSols').onclick = openDrawer;
+$('bCloseDrawer').onclick = () => { stopSteps(); closeSteps(); markCard(-1); $('drawer').hidden = true; };
+// Menú desplegable: queda abierto hasta tocar "Menú" otra vez, para poder girar mientras se sostiene una pieza
+function setMenu(open) { $('menu').hidden = !open; $('bMenu').setAttribute('aria-expanded', open); $('bMenu').classList.toggle('primary', open); }
+$('bMenu').onclick = () => setMenu($('menu').hidden);
 function startSteps(i) {
   steps = { i, k: 0 };
   markCard(DATA.solutions[i].family);
-  showStepBox(true);
-  $('stepBox').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  showStepBox();
+  $('drawer').scrollTop = 0;
   showStep();
 }
 function showStep() {
@@ -782,7 +779,7 @@ function showStep() {
 function stopSteps() {
   if (playTimer) { clearInterval(playTimer); playTimer = null; $('bPlay').textContent = 'Reproducir'; }
 }
-function closeSteps() { steps = null; $('stepBox').style.display = 'none'; }
+function closeSteps() { steps = null; $('stepBox').hidden = true; $('solList').hidden = false; }
 $('bPrev').onclick = () => { stopSteps(); if (steps && steps.k > 0) { steps.k--; showStep(); } };
 $('bNext').onclick = () => { stopSteps(); if (steps && steps.k < DATA.solutions[steps.i].steps.length) { steps.k++; showStep(); } };
 $('bPlay').onclick = () => {
@@ -802,7 +799,6 @@ function resize() {
   const w = stage.clientWidth, h = stage.clientHeight;
   renderer.setSize(w, h, false);
   camera.aspect = w / h; camera.updateProjectionMatrix();
-  if ((w / h < 0.95) !== portrait) { portrait = !portrait; setHomes(); layout(); }
   if (!userMovedCam) { const f = viewFit(topView ? VIEWTOP : VIEW3D); camera.position.copy(f.pos); controls.target.copy(f.tgt); }
 }
 controls.addEventListener('start', () => { userMovedCam = true; camAnim = null; });
