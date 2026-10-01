@@ -1,0 +1,842 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rompecabezas de Clavijas</title>
+<style>
+  /* Layout: escena 3D con barra de herramientas abajo; panel de texto al lado (escritorio) o debajo (celular) */
+  :root {
+    --bg: #f4efe7; --panel: #fffaf2; --ink: #2b211a; --muted: #7a6a5c; --line: #e3d7c6;
+    --accent: #a0522d; --accent-ink: #fff; --ok: #2f7d4f; --bad: #b3362b; --chip: #f1e6d6;
+    --glass: rgba(255, 250, 242, .9); --pegs: #b9bec5; --pegs-edge: #7f858d;
+    --display: var(--body);
+    --body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #17120e; --panel: #211a15; --ink: #f1e7da; --muted: #b3a291; --line: #3a2f26;
+      --accent: #d98b52; --accent-ink: #1a120c; --ok: #5fbf85; --bad: #ef6b5e; --chip: #2d241d;
+      --glass: rgba(33, 26, 21, .9); color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #17120e; --panel: #211a15; --ink: #f1e7da; --muted: #b3a291; --line: #3a2f26;
+    --accent: #d98b52; --accent-ink: #1a120c; --ok: #5fbf85; --bad: #ef6b5e; --chip: #2d241d;
+    --glass: rgba(33, 26, 21, .9); color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--ink); font: 14px/1.5 var(--body);
+    display: grid; grid-template-columns: minmax(0, 1fr) 390px; overflow: hidden;
+  }
+  #stage { position: relative; min-height: 0; min-width: 0; background: #2a1f18; }
+  #stage canvas { display: block; width: 100%; height: 100%; touch-action: none; -webkit-user-select: none; user-select: none; }
+  #status {
+    position: absolute; left: 12px; top: 12px; padding: 6px 11px; border-radius: 10px;
+    background: var(--glass); border: 1px solid var(--line); font-size: 13px;
+    font-variant-numeric: tabular-nums; max-width: calc(100% - 24px); pointer-events: none;
+  }
+  #hud {
+    position: absolute; left: 0; right: 0; bottom: 0; display: flex; gap: 8px;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+    overflow-x: auto; scrollbar-width: none;
+  }
+  #hud::-webkit-scrollbar { display: none; }
+  #hud button { flex: 0 0 auto; white-space: nowrap; min-height: 44px; display: inline-flex; align-items: center; gap: 6px; }
+  #win {
+    position: absolute; left: 50%; top: 56px; transform: translateX(-50%); display: none;
+    background: var(--ok); color: #fff; padding: 12px 20px; border-radius: 14px; font-size: 17px;
+    font-weight: 600; box-shadow: 0 10px 30px rgba(0,0,0,.25); text-align: center; width: max-content; max-width: calc(100% - 32px);
+  }
+  aside { background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; padding: 20px 20px 40px; min-width: 0; }
+  h1 { font: 800 24px/1.15 var(--display); margin: 0 0 8px; text-wrap: balance; letter-spacing: -.01em; }
+  h2 { font: 600 13px/1.3 var(--display); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 24px 0 8px; }
+  p { margin: 0 0 8px; }
+  .muted { color: var(--muted); }
+  button {
+    font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+    padding: 7px 12px; border-radius: 10px; cursor: pointer; touch-action: manipulation;
+  }
+  button:hover { border-color: var(--accent); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  button.small { padding: 5px 9px; font-size: 13px; }
+  button:disabled { opacity: .45; cursor: default; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .card { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 10px; }
+  .card.active { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent); }
+  .card h3 { margin: 0 0 4px; font: 600 16px/1.3 var(--display); }
+  .card .sub { color: var(--muted); font-size: 12.5px; margin-bottom: 4px; }
+  .scrollx { overflow-x: auto; }
+  table.mini { border-collapse: collapse; margin: 6px 0 10px; font-variant-numeric: tabular-nums; }
+  table.mini td, table.mini th { min-width: 34px; height: 26px; text-align: center; font-size: 12px; padding: 0 2px; }
+  table.mini th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+  table.mini td { border: 1px solid var(--line); }
+  table.mini td.peg::after { content: ""; display: inline-block; width: 11px; height: 11px; border-radius: 50%; background: var(--pegs); border: 1px solid var(--pegs-edge); }
+  .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 3px; vertical-align: -1px; border: 1px solid rgba(0,0,0,.2); }
+  .ok-t { color: var(--ok); } .bad-t { color: var(--bad); }
+  ul.intro, ul.help { padding-left: 18px; margin: 6px 0; }
+  ul.intro li, ul.help li { margin-bottom: 5px; }
+  #stepBox { display: none; }
+  #stepText { min-height: 70px; background: var(--chip); border-radius: 10px; padding: 10px 12px; margin: 8px 0; }
+  #stepText b { display: block; margin-bottom: 4px; }
+  .pieces { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: 13px; }
+  kbd { background: var(--chip); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; font-size: 12px; }
+  @media (max-width: 820px) {
+    html, body { height: auto; }
+    body { grid-template-columns: minmax(0, 1fr); overflow: visible; }
+    #stage { height: 74svh; min-height: 440px; }
+    aside { border-left: 0; border-top: 1px solid var(--line); padding: 18px 16px 48px; }
+    .keys { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="stage">
+  <div id="status"></div>
+  <div id="win"></div>
+  <div id="hud">
+    <button id="bFlip" title="R">Girar</button>
+    <button id="bTurn" title="V">Voltear</button>
+    <button id="bPegs">Clavijas</button>
+    <button id="bHint">Pista</button>
+    <button id="bShuffle">Mezclar</button>
+    <button id="bView"><span id="bViewLbl">Planta</span></button>
+    <button id="bLabels"><span id="bLabelsLbl">Etiquetas</span></button>
+  </div>
+</div>
+
+<aside>
+  <h1>Clavijas</h1>
+  <p>Acomoda 5 barras abajo y 5 cruzadas encima para que los 12 agujeros coincidan. Luego mete las clavijas.</p>
+  <p class="muted">Arrastra para mover · doble toque para girar</p>
+
+  <div id="stepBox">
+    <h2>Paso a paso</h2>
+    <div id="stepText"></div>
+    <div class="row" id="stepBtns">
+      <button id="bPrev">Anterior</button>
+      <button id="bNext" class="primary">Siguiente</button>
+      <button id="bPlay">Reproducir</button>
+      <button id="bClose">Cerrar</button>
+    </div>
+  </div>
+
+  <h2>Soluciones</h2>
+  <p id="solLocked" class="muted">Disponibles al resolverlo.</p>
+  <div id="solList" hidden></div>
+</aside>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const DATA = {"bars": [{"id": "A", "name": "Roble claro", "color": "#c99a5c", "pos": [0, 2, 3, 4], "sym": false}, {"id": "B", "name": "Wengué oscuro", "color": "#3b2a20", "pos": [3], "sym": false}, {"id": "C", "name": "Nogal", "color": "#6e3f2a", "pos": [0, 3, 4], "sym": false}, {"id": "D", "name": "Cedro rojo", "color": "#8f4a30", "pos": [2, 4], "sym": false}, {"id": "E", "name": "Iroko veteado", "color": "#7a5236", "pos": [0, 1], "sym": false}, {"id": "F", "name": "Palo de rosa", "color": "#5a3324", "pos": [0, 2, 4], "sym": true}, {"id": "G", "name": "Roble rojo", "color": "#a0602f", "pos": [4], "sym": false}, {"id": "H", "name": "Wengué rayado", "color": "#3e3127", "pos": [0, 3], "sym": false}, {"id": "I", "name": "Padouk oscuro", "color": "#6a3228", "pos": [0, 1, 2], "sym": false}, {"id": "J", "name": "Fresno", "color": "#cfa46c", "pos": [0, 2, 3], "sym": false}], "pegs": 12, "solutions": [{"rows": [{"id": "A", "flip": 0}, {"id": "B", "flip": 0}, {"id": "C", "flip": 0}, {"id": "D", "flip": 0}, {"id": "E", "flip": 0}], "cols": [{"id": "F", "flip": 0}, {"id": "G", "flip": 0}, {"id": "H", "flip": 0}, {"id": "I", "flip": 0}, {"id": "J", "flip": 0}], "family": 0, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo A B C D E · arriba F G H I J", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "A", "slot": 0, "flip": 0, "title": "A → fila 1", "text": "Agujeros en las columnas 1, 3, 4 y 5."}, {"type": "row", "id": "C", "slot": 2, "flip": 0, "title": "C → fila 3", "text": "Agujeros en las columnas 1, 4 y 5."}, {"type": "row", "id": "D", "slot": 3, "flip": 0, "title": "D → fila 4", "text": "Agujeros en las columnas 3 y 5."}, {"type": "row", "id": "E", "slot": 4, "flip": 0, "title": "E → fila 5", "text": "Agujeros en las columnas 1 y 2."}, {"type": "row", "id": "B", "slot": 1, "flip": 0, "title": "B → fila 2", "text": "Agujeros en la columna 4."}, {"type": "col", "id": "F", "slot": 0, "flip": 0, "title": "F → columna 1", "text": "La columna pide agujeros en las filas 1, 3 y 5: solo encaja esta."}, {"type": "col", "id": "I", "slot": 3, "flip": 0, "title": "I → columna 4", "text": "La columna pide agujeros en las filas 1, 2 y 3: solo encaja esta."}, {"type": "col", "id": "J", "slot": 4, "flip": 0, "title": "J → columna 5", "text": "La columna pide agujeros en las filas 1, 3 y 4: solo encaja esta."}, {"type": "col", "id": "H", "slot": 2, "flip": 0, "title": "H → columna 3", "text": "La columna pide agujeros en las filas 1 y 4: solo encaja esta."}, {"type": "col", "id": "G", "slot": 1, "flip": 0, "title": "G → columna 2", "text": "La columna pide agujeros en la fila 5: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "A", "flip": 1}, {"id": "B", "flip": 1}, {"id": "C", "flip": 1}, {"id": "D", "flip": 1}, {"id": "E", "flip": 1}], "cols": [{"id": "J", "flip": 0}, {"id": "I", "flip": 0}, {"id": "H", "flip": 0}, {"id": "G", "flip": 0}, {"id": "F", "flip": 0}], "family": 1, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo A B C D E · arriba F G H I J", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "A", "slot": 0, "flip": 1, "title": "A → fila 1, girada", "text": "Agujeros en las columnas 1, 2, 3 y 5."}, {"type": "row", "id": "C", "slot": 2, "flip": 1, "title": "C → fila 3, girada", "text": "Agujeros en las columnas 1, 2 y 5."}, {"type": "row", "id": "D", "slot": 3, "flip": 1, "title": "D → fila 4, girada", "text": "Agujeros en las columnas 1 y 3."}, {"type": "row", "id": "E", "slot": 4, "flip": 1, "title": "E → fila 5, girada", "text": "Agujeros en las columnas 4 y 5."}, {"type": "row", "id": "B", "slot": 1, "flip": 1, "title": "B → fila 2, girada", "text": "Agujeros en la columna 2."}, {"type": "col", "id": "J", "slot": 0, "flip": 0, "title": "J → columna 1", "text": "La columna pide agujeros en las filas 1, 3 y 4: solo encaja esta."}, {"type": "col", "id": "I", "slot": 1, "flip": 0, "title": "I → columna 2", "text": "La columna pide agujeros en las filas 1, 2 y 3: solo encaja esta."}, {"type": "col", "id": "F", "slot": 4, "flip": 0, "title": "F → columna 5", "text": "La columna pide agujeros en las filas 1, 3 y 5: solo encaja esta."}, {"type": "col", "id": "H", "slot": 2, "flip": 0, "title": "H → columna 3", "text": "La columna pide agujeros en las filas 1 y 4: solo encaja esta."}, {"type": "col", "id": "G", "slot": 3, "flip": 0, "title": "G → columna 4", "text": "La columna pide agujeros en la fila 5: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "E", "flip": 0}, {"id": "D", "flip": 0}, {"id": "C", "flip": 0}, {"id": "B", "flip": 0}, {"id": "A", "flip": 0}], "cols": [{"id": "F", "flip": 0}, {"id": "G", "flip": 1}, {"id": "H", "flip": 1}, {"id": "I", "flip": 1}, {"id": "J", "flip": 1}], "family": 1, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo A B C D E · arriba F G H I J", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "A", "slot": 4, "flip": 0, "title": "A → fila 5", "text": "Agujeros en las columnas 1, 3, 4 y 5."}, {"type": "row", "id": "C", "slot": 2, "flip": 0, "title": "C → fila 3", "text": "Agujeros en las columnas 1, 4 y 5."}, {"type": "row", "id": "E", "slot": 0, "flip": 0, "title": "E → fila 1", "text": "Agujeros en las columnas 1 y 2."}, {"type": "row", "id": "D", "slot": 1, "flip": 0, "title": "D → fila 2", "text": "Agujeros en las columnas 3 y 5."}, {"type": "row", "id": "B", "slot": 3, "flip": 0, "title": "B → fila 4", "text": "Agujeros en la columna 4."}, {"type": "col", "id": "F", "slot": 0, "flip": 0, "title": "F → columna 1", "text": "La columna pide agujeros en las filas 1, 3 y 5: solo encaja esta."}, {"type": "col", "id": "I", "slot": 3, "flip": 1, "title": "I → columna 4, girada", "text": "La columna pide agujeros en las filas 3, 4 y 5: solo encaja esta."}, {"type": "col", "id": "J", "slot": 4, "flip": 1, "title": "J → columna 5, girada", "text": "La columna pide agujeros en las filas 2, 3 y 5: solo encaja esta."}, {"type": "col", "id": "H", "slot": 2, "flip": 1, "title": "H → columna 3, girada", "text": "La columna pide agujeros en las filas 2 y 5: solo encaja esta."}, {"type": "col", "id": "G", "slot": 1, "flip": 1, "title": "G → columna 2, girada", "text": "La columna pide agujeros en la fila 1: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "E", "flip": 1}, {"id": "D", "flip": 1}, {"id": "C", "flip": 1}, {"id": "B", "flip": 1}, {"id": "A", "flip": 1}], "cols": [{"id": "J", "flip": 1}, {"id": "I", "flip": 1}, {"id": "H", "flip": 1}, {"id": "G", "flip": 1}, {"id": "F", "flip": 0}], "family": 0, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo A B C D E · arriba F G H I J", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "A", "slot": 4, "flip": 1, "title": "A → fila 5, girada", "text": "Agujeros en las columnas 1, 2, 3 y 5."}, {"type": "row", "id": "C", "slot": 2, "flip": 1, "title": "C → fila 3, girada", "text": "Agujeros en las columnas 1, 2 y 5."}, {"type": "row", "id": "E", "slot": 0, "flip": 1, "title": "E → fila 1, girada", "text": "Agujeros en las columnas 4 y 5."}, {"type": "row", "id": "D", "slot": 1, "flip": 1, "title": "D → fila 2, girada", "text": "Agujeros en las columnas 1 y 3."}, {"type": "row", "id": "B", "slot": 3, "flip": 1, "title": "B → fila 4, girada", "text": "Agujeros en la columna 2."}, {"type": "col", "id": "J", "slot": 0, "flip": 1, "title": "J → columna 1, girada", "text": "La columna pide agujeros en las filas 2, 3 y 5: solo encaja esta."}, {"type": "col", "id": "I", "slot": 1, "flip": 1, "title": "I → columna 2, girada", "text": "La columna pide agujeros en las filas 3, 4 y 5: solo encaja esta."}, {"type": "col", "id": "F", "slot": 4, "flip": 0, "title": "F → columna 5", "text": "La columna pide agujeros en las filas 1, 3 y 5: solo encaja esta."}, {"type": "col", "id": "H", "slot": 2, "flip": 1, "title": "H → columna 3, girada", "text": "La columna pide agujeros en las filas 2 y 5: solo encaja esta."}, {"type": "col", "id": "G", "slot": 3, "flip": 1, "title": "G → columna 4, girada", "text": "La columna pide agujeros en la fila 1: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "A", "flip": 0}, {"id": "D", "flip": 1}, {"id": "C", "flip": 0}, {"id": "B", "flip": 0}, {"id": "H", "flip": 1}], "cols": [{"id": "I", "flip": 0}, {"id": "G", "flip": 0}, {"id": "E", "flip": 0}, {"id": "J", "flip": 0}, {"id": "F", "flip": 0}], "family": 2, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo A B C D H · arriba E F G I J", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "A", "slot": 0, "flip": 0, "title": "A → fila 1", "text": "Agujeros en las columnas 1, 3, 4 y 5."}, {"type": "row", "id": "C", "slot": 2, "flip": 0, "title": "C → fila 3", "text": "Agujeros en las columnas 1, 4 y 5."}, {"type": "row", "id": "D", "slot": 1, "flip": 1, "title": "D → fila 2, girada", "text": "Agujeros en las columnas 1 y 3."}, {"type": "row", "id": "H", "slot": 4, "flip": 1, "title": "H → fila 5, girada", "text": "Agujeros en las columnas 2 y 5."}, {"type": "row", "id": "B", "slot": 3, "flip": 0, "title": "B → fila 4", "text": "Agujeros en la columna 4."}, {"type": "col", "id": "I", "slot": 0, "flip": 0, "title": "I → columna 1", "text": "La columna pide agujeros en las filas 1, 2 y 3: solo encaja esta."}, {"type": "col", "id": "J", "slot": 3, "flip": 0, "title": "J → columna 4", "text": "La columna pide agujeros en las filas 1, 3 y 4: solo encaja esta."}, {"type": "col", "id": "F", "slot": 4, "flip": 0, "title": "F → columna 5", "text": "La columna pide agujeros en las filas 1, 3 y 5: solo encaja esta."}, {"type": "col", "id": "E", "slot": 2, "flip": 0, "title": "E → columna 3", "text": "La columna pide agujeros en las filas 1 y 2: solo encaja esta."}, {"type": "col", "id": "G", "slot": 1, "flip": 0, "title": "G → columna 2", "text": "La columna pide agujeros en la fila 5: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "A", "flip": 1}, {"id": "D", "flip": 0}, {"id": "C", "flip": 1}, {"id": "B", "flip": 1}, {"id": "H", "flip": 0}], "cols": [{"id": "F", "flip": 0}, {"id": "J", "flip": 0}, {"id": "E", "flip": 0}, {"id": "G", "flip": 0}, {"id": "I", "flip": 0}], "family": 3, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo A B C D H · arriba E F G I J", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "A", "slot": 0, "flip": 1, "title": "A → fila 1, girada", "text": "Agujeros en las columnas 1, 2, 3 y 5."}, {"type": "row", "id": "C", "slot": 2, "flip": 1, "title": "C → fila 3, girada", "text": "Agujeros en las columnas 1, 2 y 5."}, {"type": "row", "id": "D", "slot": 1, "flip": 0, "title": "D → fila 2", "text": "Agujeros en las columnas 3 y 5."}, {"type": "row", "id": "H", "slot": 4, "flip": 0, "title": "H → fila 5", "text": "Agujeros en las columnas 1 y 4."}, {"type": "row", "id": "B", "slot": 3, "flip": 1, "title": "B → fila 4, girada", "text": "Agujeros en la columna 2."}, {"type": "col", "id": "F", "slot": 0, "flip": 0, "title": "F → columna 1", "text": "La columna pide agujeros en las filas 1, 3 y 5: solo encaja esta."}, {"type": "col", "id": "J", "slot": 1, "flip": 0, "title": "J → columna 2", "text": "La columna pide agujeros en las filas 1, 3 y 4: solo encaja esta."}, {"type": "col", "id": "I", "slot": 4, "flip": 0, "title": "I → columna 5", "text": "La columna pide agujeros en las filas 1, 2 y 3: solo encaja esta."}, {"type": "col", "id": "E", "slot": 2, "flip": 0, "title": "E → columna 3", "text": "La columna pide agujeros en las filas 1 y 2: solo encaja esta."}, {"type": "col", "id": "G", "slot": 3, "flip": 0, "title": "G → columna 4", "text": "La columna pide agujeros en la fila 5: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "H", "flip": 0}, {"id": "B", "flip": 1}, {"id": "C", "flip": 1}, {"id": "D", "flip": 0}, {"id": "A", "flip": 1}], "cols": [{"id": "F", "flip": 0}, {"id": "J", "flip": 1}, {"id": "E", "flip": 1}, {"id": "G", "flip": 1}, {"id": "I", "flip": 1}], "family": 2, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo A B C D H · arriba E F G I J", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "A", "slot": 4, "flip": 1, "title": "A → fila 5, girada", "text": "Agujeros en las columnas 1, 2, 3 y 5."}, {"type": "row", "id": "C", "slot": 2, "flip": 1, "title": "C → fila 3, girada", "text": "Agujeros en las columnas 1, 2 y 5."}, {"type": "row", "id": "H", "slot": 0, "flip": 0, "title": "H → fila 1", "text": "Agujeros en las columnas 1 y 4."}, {"type": "row", "id": "D", "slot": 3, "flip": 0, "title": "D → fila 4", "text": "Agujeros en las columnas 3 y 5."}, {"type": "row", "id": "B", "slot": 1, "flip": 1, "title": "B → fila 2, girada", "text": "Agujeros en la columna 2."}, {"type": "col", "id": "F", "slot": 0, "flip": 0, "title": "F → columna 1", "text": "La columna pide agujeros en las filas 1, 3 y 5: solo encaja esta."}, {"type": "col", "id": "J", "slot": 1, "flip": 1, "title": "J → columna 2, girada", "text": "La columna pide agujeros en las filas 2, 3 y 5: solo encaja esta."}, {"type": "col", "id": "I", "slot": 4, "flip": 1, "title": "I → columna 5, girada", "text": "La columna pide agujeros en las filas 3, 4 y 5: solo encaja esta."}, {"type": "col", "id": "E", "slot": 2, "flip": 1, "title": "E → columna 3, girada", "text": "La columna pide agujeros en las filas 4 y 5: solo encaja esta."}, {"type": "col", "id": "G", "slot": 3, "flip": 1, "title": "G → columna 4, girada", "text": "La columna pide agujeros en la fila 1: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "H", "flip": 1}, {"id": "B", "flip": 0}, {"id": "C", "flip": 0}, {"id": "D", "flip": 1}, {"id": "A", "flip": 0}], "cols": [{"id": "I", "flip": 1}, {"id": "G", "flip": 1}, {"id": "E", "flip": 1}, {"id": "J", "flip": 1}, {"id": "F", "flip": 0}], "family": 3, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo A B C D H · arriba E F G I J", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "A", "slot": 4, "flip": 0, "title": "A → fila 5", "text": "Agujeros en las columnas 1, 3, 4 y 5."}, {"type": "row", "id": "C", "slot": 2, "flip": 0, "title": "C → fila 3", "text": "Agujeros en las columnas 1, 4 y 5."}, {"type": "row", "id": "H", "slot": 0, "flip": 1, "title": "H → fila 1, girada", "text": "Agujeros en las columnas 2 y 5."}, {"type": "row", "id": "D", "slot": 3, "flip": 1, "title": "D → fila 4, girada", "text": "Agujeros en las columnas 1 y 3."}, {"type": "row", "id": "B", "slot": 1, "flip": 0, "title": "B → fila 2", "text": "Agujeros en la columna 4."}, {"type": "col", "id": "I", "slot": 0, "flip": 1, "title": "I → columna 1, girada", "text": "La columna pide agujeros en las filas 3, 4 y 5: solo encaja esta."}, {"type": "col", "id": "J", "slot": 3, "flip": 1, "title": "J → columna 4, girada", "text": "La columna pide agujeros en las filas 2, 3 y 5: solo encaja esta."}, {"type": "col", "id": "F", "slot": 4, "flip": 0, "title": "F → columna 5", "text": "La columna pide agujeros en las filas 1, 3 y 5: solo encaja esta."}, {"type": "col", "id": "E", "slot": 2, "flip": 1, "title": "E → columna 3, girada", "text": "La columna pide agujeros en las filas 4 y 5: solo encaja esta."}, {"type": "col", "id": "G", "slot": 1, "flip": 1, "title": "G → columna 2, girada", "text": "La columna pide agujeros en la fila 1: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "A", "flip": 0}, {"id": "B", "flip": 1}, {"id": "E", "flip": 0}, {"id": "D", "flip": 0}, {"id": "I", "flip": 0}], "cols": [{"id": "F", "flip": 0}, {"id": "J", "flip": 1}, {"id": "C", "flip": 0}, {"id": "G", "flip": 1}, {"id": "H", "flip": 0}], "family": 4, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo A B D E I · arriba C F G H J", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "A", "slot": 0, "flip": 0, "title": "A → fila 1", "text": "Agujeros en las columnas 1, 3, 4 y 5."}, {"type": "row", "id": "I", "slot": 4, "flip": 0, "title": "I → fila 5", "text": "Agujeros en las columnas 1, 2 y 3."}, {"type": "row", "id": "E", "slot": 2, "flip": 0, "title": "E → fila 3", "text": "Agujeros en las columnas 1 y 2."}, {"type": "row", "id": "D", "slot": 3, "flip": 0, "title": "D → fila 4", "text": "Agujeros en las columnas 3 y 5."}, {"type": "row", "id": "B", "slot": 1, "flip": 1, "title": "B → fila 2, girada", "text": "Agujeros en la columna 2."}, {"type": "col", "id": "F", "slot": 0, "flip": 0, "title": "F → columna 1", "text": "La columna pide agujeros en las filas 1, 3 y 5: solo encaja esta."}, {"type": "col", "id": "J", "slot": 1, "flip": 1, "title": "J → columna 2, girada", "text": "La columna pide agujeros en las filas 2, 3 y 5: solo encaja esta."}, {"type": "col", "id": "C", "slot": 2, "flip": 0, "title": "C → columna 3", "text": "La columna pide agujeros en las filas 1, 4 y 5: solo encaja esta."}, {"type": "col", "id": "H", "slot": 4, "flip": 0, "title": "H → columna 5", "text": "La columna pide agujeros en las filas 1 y 4: solo encaja esta."}, {"type": "col", "id": "G", "slot": 3, "flip": 1, "title": "G → columna 4, girada", "text": "La columna pide agujeros en la fila 1: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "A", "flip": 1}, {"id": "B", "flip": 0}, {"id": "E", "flip": 1}, {"id": "D", "flip": 1}, {"id": "I", "flip": 1}], "cols": [{"id": "H", "flip": 0}, {"id": "G", "flip": 1}, {"id": "C", "flip": 0}, {"id": "J", "flip": 1}, {"id": "F", "flip": 0}], "family": 5, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo A B D E I · arriba C F G H J", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "A", "slot": 0, "flip": 1, "title": "A → fila 1, girada", "text": "Agujeros en las columnas 1, 2, 3 y 5."}, {"type": "row", "id": "I", "slot": 4, "flip": 1, "title": "I → fila 5, girada", "text": "Agujeros en las columnas 3, 4 y 5."}, {"type": "row", "id": "E", "slot": 2, "flip": 1, "title": "E → fila 3, girada", "text": "Agujeros en las columnas 4 y 5."}, {"type": "row", "id": "D", "slot": 3, "flip": 1, "title": "D → fila 4, girada", "text": "Agujeros en las columnas 1 y 3."}, {"type": "row", "id": "B", "slot": 1, "flip": 0, "title": "B → fila 2", "text": "Agujeros en la columna 4."}, {"type": "col", "id": "C", "slot": 2, "flip": 0, "title": "C → columna 3", "text": "La columna pide agujeros en las filas 1, 4 y 5: solo encaja esta."}, {"type": "col", "id": "J", "slot": 3, "flip": 1, "title": "J → columna 4, girada", "text": "La columna pide agujeros en las filas 2, 3 y 5: solo encaja esta."}, {"type": "col", "id": "F", "slot": 4, "flip": 0, "title": "F → columna 5", "text": "La columna pide agujeros en las filas 1, 3 y 5: solo encaja esta."}, {"type": "col", "id": "H", "slot": 0, "flip": 0, "title": "H → columna 1", "text": "La columna pide agujeros en las filas 1 y 4: solo encaja esta."}, {"type": "col", "id": "G", "slot": 1, "flip": 1, "title": "G → columna 2, girada", "text": "La columna pide agujeros en la fila 1: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "I", "flip": 0}, {"id": "D", "flip": 0}, {"id": "E", "flip": 0}, {"id": "B", "flip": 1}, {"id": "A", "flip": 0}], "cols": [{"id": "F", "flip": 0}, {"id": "J", "flip": 0}, {"id": "C", "flip": 1}, {"id": "G", "flip": 0}, {"id": "H", "flip": 1}], "family": 5, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo A B D E I · arriba C F G H J", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "A", "slot": 4, "flip": 0, "title": "A → fila 5", "text": "Agujeros en las columnas 1, 3, 4 y 5."}, {"type": "row", "id": "I", "slot": 0, "flip": 0, "title": "I → fila 1", "text": "Agujeros en las columnas 1, 2 y 3."}, {"type": "row", "id": "D", "slot": 1, "flip": 0, "title": "D → fila 2", "text": "Agujeros en las columnas 3 y 5."}, {"type": "row", "id": "E", "slot": 2, "flip": 0, "title": "E → fila 3", "text": "Agujeros en las columnas 1 y 2."}, {"type": "row", "id": "B", "slot": 3, "flip": 1, "title": "B → fila 4, girada", "text": "Agujeros en la columna 2."}, {"type": "col", "id": "F", "slot": 0, "flip": 0, "title": "F → columna 1", "text": "La columna pide agujeros en las filas 1, 3 y 5: solo encaja esta."}, {"type": "col", "id": "J", "slot": 1, "flip": 0, "title": "J → columna 2", "text": "La columna pide agujeros en las filas 1, 3 y 4: solo encaja esta."}, {"type": "col", "id": "C", "slot": 2, "flip": 1, "title": "C → columna 3, girada", "text": "La columna pide agujeros en las filas 1, 2 y 5: solo encaja esta."}, {"type": "col", "id": "H", "slot": 4, "flip": 1, "title": "H → columna 5, girada", "text": "La columna pide agujeros en las filas 2 y 5: solo encaja esta."}, {"type": "col", "id": "G", "slot": 3, "flip": 0, "title": "G → columna 4", "text": "La columna pide agujeros en la fila 5: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "I", "flip": 1}, {"id": "D", "flip": 1}, {"id": "E", "flip": 1}, {"id": "B", "flip": 0}, {"id": "A", "flip": 1}], "cols": [{"id": "H", "flip": 1}, {"id": "G", "flip": 0}, {"id": "C", "flip": 1}, {"id": "J", "flip": 0}, {"id": "F", "flip": 0}], "family": 4, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo A B D E I · arriba C F G H J", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "A", "slot": 4, "flip": 1, "title": "A → fila 5, girada", "text": "Agujeros en las columnas 1, 2, 3 y 5."}, {"type": "row", "id": "I", "slot": 0, "flip": 1, "title": "I → fila 1, girada", "text": "Agujeros en las columnas 3, 4 y 5."}, {"type": "row", "id": "D", "slot": 1, "flip": 1, "title": "D → fila 2, girada", "text": "Agujeros en las columnas 1 y 3."}, {"type": "row", "id": "E", "slot": 2, "flip": 1, "title": "E → fila 3, girada", "text": "Agujeros en las columnas 4 y 5."}, {"type": "row", "id": "B", "slot": 3, "flip": 0, "title": "B → fila 4", "text": "Agujeros en la columna 4."}, {"type": "col", "id": "C", "slot": 2, "flip": 1, "title": "C → columna 3, girada", "text": "La columna pide agujeros en las filas 1, 2 y 5: solo encaja esta."}, {"type": "col", "id": "J", "slot": 3, "flip": 0, "title": "J → columna 4", "text": "La columna pide agujeros en las filas 1, 3 y 4: solo encaja esta."}, {"type": "col", "id": "F", "slot": 4, "flip": 0, "title": "F → columna 5", "text": "La columna pide agujeros en las filas 1, 3 y 5: solo encaja esta."}, {"type": "col", "id": "H", "slot": 0, "flip": 1, "title": "H → columna 1, girada", "text": "La columna pide agujeros en las filas 2 y 5: solo encaja esta."}, {"type": "col", "id": "G", "slot": 1, "flip": 0, "title": "G → columna 2", "text": "La columna pide agujeros en la fila 5: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "A", "flip": 0}, {"id": "B", "flip": 0}, {"id": "E", "flip": 1}, {"id": "D", "flip": 1}, {"id": "J", "flip": 1}], "cols": [{"id": "H", "flip": 0}, {"id": "G", "flip": 0}, {"id": "C", "flip": 0}, {"id": "I", "flip": 0}, {"id": "F", "flip": 0}], "family": 6, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo A B D E J · arriba C F G H I", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "A", "slot": 0, "flip": 0, "title": "A → fila 1", "text": "Agujeros en las columnas 1, 3, 4 y 5."}, {"type": "row", "id": "J", "slot": 4, "flip": 1, "title": "J → fila 5, girada", "text": "Agujeros en las columnas 2, 3 y 5."}, {"type": "row", "id": "E", "slot": 2, "flip": 1, "title": "E → fila 3, girada", "text": "Agujeros en las columnas 4 y 5."}, {"type": "row", "id": "D", "slot": 3, "flip": 1, "title": "D → fila 4, girada", "text": "Agujeros en las columnas 1 y 3."}, {"type": "row", "id": "B", "slot": 1, "flip": 0, "title": "B → fila 2", "text": "Agujeros en la columna 4."}, {"type": "col", "id": "C", "slot": 2, "flip": 0, "title": "C → columna 3", "text": "La columna pide agujeros en las filas 1, 4 y 5: solo encaja esta."}, {"type": "col", "id": "I", "slot": 3, "flip": 0, "title": "I → columna 4", "text": "La columna pide agujeros en las filas 1, 2 y 3: solo encaja esta."}, {"type": "col", "id": "F", "slot": 4, "flip": 0, "title": "F → columna 5", "text": "La columna pide agujeros en las filas 1, 3 y 5: solo encaja esta."}, {"type": "col", "id": "H", "slot": 0, "flip": 0, "title": "H → columna 1", "text": "La columna pide agujeros en las filas 1 y 4: solo encaja esta."}, {"type": "col", "id": "G", "slot": 1, "flip": 0, "title": "G → columna 2", "text": "La columna pide agujeros en la fila 5: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "A", "flip": 1}, {"id": "B", "flip": 1}, {"id": "E", "flip": 0}, {"id": "D", "flip": 0}, {"id": "J", "flip": 0}], "cols": [{"id": "F", "flip": 0}, {"id": "I", "flip": 0}, {"id": "C", "flip": 0}, {"id": "G", "flip": 0}, {"id": "H", "flip": 0}], "family": 7, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo A B D E J · arriba C F G H I", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "A", "slot": 0, "flip": 1, "title": "A → fila 1, girada", "text": "Agujeros en las columnas 1, 2, 3 y 5."}, {"type": "row", "id": "J", "slot": 4, "flip": 0, "title": "J → fila 5", "text": "Agujeros en las columnas 1, 3 y 4."}, {"type": "row", "id": "E", "slot": 2, "flip": 0, "title": "E → fila 3", "text": "Agujeros en las columnas 1 y 2."}, {"type": "row", "id": "D", "slot": 3, "flip": 0, "title": "D → fila 4", "text": "Agujeros en las columnas 3 y 5."}, {"type": "row", "id": "B", "slot": 1, "flip": 1, "title": "B → fila 2, girada", "text": "Agujeros en la columna 2."}, {"type": "col", "id": "F", "slot": 0, "flip": 0, "title": "F → columna 1", "text": "La columna pide agujeros en las filas 1, 3 y 5: solo encaja esta."}, {"type": "col", "id": "I", "slot": 1, "flip": 0, "title": "I → columna 2", "text": "La columna pide agujeros en las filas 1, 2 y 3: solo encaja esta."}, {"type": "col", "id": "C", "slot": 2, "flip": 0, "title": "C → columna 3", "text": "La columna pide agujeros en las filas 1, 4 y 5: solo encaja esta."}, {"type": "col", "id": "H", "slot": 4, "flip": 0, "title": "H → columna 5", "text": "La columna pide agujeros en las filas 1 y 4: solo encaja esta."}, {"type": "col", "id": "G", "slot": 3, "flip": 0, "title": "G → columna 4", "text": "La columna pide agujeros en la fila 5: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "J", "flip": 0}, {"id": "D", "flip": 0}, {"id": "E", "flip": 0}, {"id": "B", "flip": 1}, {"id": "A", "flip": 1}], "cols": [{"id": "F", "flip": 0}, {"id": "I", "flip": 1}, {"id": "C", "flip": 1}, {"id": "G", "flip": 1}, {"id": "H", "flip": 1}], "family": 6, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo A B D E J · arriba C F G H I", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "A", "slot": 4, "flip": 1, "title": "A → fila 5, girada", "text": "Agujeros en las columnas 1, 2, 3 y 5."}, {"type": "row", "id": "J", "slot": 0, "flip": 0, "title": "J → fila 1", "text": "Agujeros en las columnas 1, 3 y 4."}, {"type": "row", "id": "D", "slot": 1, "flip": 0, "title": "D → fila 2", "text": "Agujeros en las columnas 3 y 5."}, {"type": "row", "id": "E", "slot": 2, "flip": 0, "title": "E → fila 3", "text": "Agujeros en las columnas 1 y 2."}, {"type": "row", "id": "B", "slot": 3, "flip": 1, "title": "B → fila 4, girada", "text": "Agujeros en la columna 2."}, {"type": "col", "id": "F", "slot": 0, "flip": 0, "title": "F → columna 1", "text": "La columna pide agujeros en las filas 1, 3 y 5: solo encaja esta."}, {"type": "col", "id": "I", "slot": 1, "flip": 1, "title": "I → columna 2, girada", "text": "La columna pide agujeros en las filas 3, 4 y 5: solo encaja esta."}, {"type": "col", "id": "C", "slot": 2, "flip": 1, "title": "C → columna 3, girada", "text": "La columna pide agujeros en las filas 1, 2 y 5: solo encaja esta."}, {"type": "col", "id": "H", "slot": 4, "flip": 1, "title": "H → columna 5, girada", "text": "La columna pide agujeros en las filas 2 y 5: solo encaja esta."}, {"type": "col", "id": "G", "slot": 3, "flip": 1, "title": "G → columna 4, girada", "text": "La columna pide agujeros en la fila 1: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "J", "flip": 1}, {"id": "D", "flip": 1}, {"id": "E", "flip": 1}, {"id": "B", "flip": 0}, {"id": "A", "flip": 0}], "cols": [{"id": "H", "flip": 1}, {"id": "G", "flip": 1}, {"id": "C", "flip": 1}, {"id": "I", "flip": 1}, {"id": "F", "flip": 0}], "family": 7, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo A B D E J · arriba C F G H I", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "A", "slot": 4, "flip": 0, "title": "A → fila 5", "text": "Agujeros en las columnas 1, 3, 4 y 5."}, {"type": "row", "id": "J", "slot": 0, "flip": 1, "title": "J → fila 1, girada", "text": "Agujeros en las columnas 2, 3 y 5."}, {"type": "row", "id": "D", "slot": 1, "flip": 1, "title": "D → fila 2, girada", "text": "Agujeros en las columnas 1 y 3."}, {"type": "row", "id": "E", "slot": 2, "flip": 1, "title": "E → fila 3, girada", "text": "Agujeros en las columnas 4 y 5."}, {"type": "row", "id": "B", "slot": 3, "flip": 0, "title": "B → fila 4", "text": "Agujeros en la columna 4."}, {"type": "col", "id": "C", "slot": 2, "flip": 1, "title": "C → columna 3, girada", "text": "La columna pide agujeros en las filas 1, 2 y 5: solo encaja esta."}, {"type": "col", "id": "I", "slot": 3, "flip": 1, "title": "I → columna 4, girada", "text": "La columna pide agujeros en las filas 3, 4 y 5: solo encaja esta."}, {"type": "col", "id": "F", "slot": 4, "flip": 0, "title": "F → columna 5", "text": "La columna pide agujeros en las filas 1, 3 y 5: solo encaja esta."}, {"type": "col", "id": "H", "slot": 0, "flip": 1, "title": "H → columna 1, girada", "text": "La columna pide agujeros en las filas 2 y 5: solo encaja esta."}, {"type": "col", "id": "G", "slot": 1, "flip": 1, "title": "G → columna 2, girada", "text": "La columna pide agujeros en la fila 1: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "A", "flip": 0}, {"id": "D", "flip": 0}, {"id": "H", "flip": 0}, {"id": "B", "flip": 0}, {"id": "I", "flip": 0}], "cols": [{"id": "F", "flip": 0}, {"id": "G", "flip": 0}, {"id": "C", "flip": 1}, {"id": "J", "flip": 0}, {"id": "E", "flip": 0}], "family": 8, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo A B D H I · arriba C E F G J", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "A", "slot": 0, "flip": 0, "title": "A → fila 1", "text": "Agujeros en las columnas 1, 3, 4 y 5."}, {"type": "row", "id": "I", "slot": 4, "flip": 0, "title": "I → fila 5", "text": "Agujeros en las columnas 1, 2 y 3."}, {"type": "row", "id": "D", "slot": 1, "flip": 0, "title": "D → fila 2", "text": "Agujeros en las columnas 3 y 5."}, {"type": "row", "id": "H", "slot": 2, "flip": 0, "title": "H → fila 3", "text": "Agujeros en las columnas 1 y 4."}, {"type": "row", "id": "B", "slot": 3, "flip": 0, "title": "B → fila 4", "text": "Agujeros en la columna 4."}, {"type": "col", "id": "F", "slot": 0, "flip": 0, "title": "F → columna 1", "text": "La columna pide agujeros en las filas 1, 3 y 5: solo encaja esta."}, {"type": "col", "id": "C", "slot": 2, "flip": 1, "title": "C → columna 3, girada", "text": "La columna pide agujeros en las filas 1, 2 y 5: solo encaja esta."}, {"type": "col", "id": "J", "slot": 3, "flip": 0, "title": "J → columna 4", "text": "La columna pide agujeros en las filas 1, 3 y 4: solo encaja esta."}, {"type": "col", "id": "E", "slot": 4, "flip": 0, "title": "E → columna 5", "text": "La columna pide agujeros en las filas 1 y 2: solo encaja esta."}, {"type": "col", "id": "G", "slot": 1, "flip": 0, "title": "G → columna 2", "text": "La columna pide agujeros en la fila 5: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "A", "flip": 1}, {"id": "D", "flip": 1}, {"id": "H", "flip": 1}, {"id": "B", "flip": 1}, {"id": "I", "flip": 1}], "cols": [{"id": "E", "flip": 0}, {"id": "J", "flip": 0}, {"id": "C", "flip": 1}, {"id": "G", "flip": 0}, {"id": "F", "flip": 0}], "family": 9, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo A B D H I · arriba C E F G J", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "A", "slot": 0, "flip": 1, "title": "A → fila 1, girada", "text": "Agujeros en las columnas 1, 2, 3 y 5."}, {"type": "row", "id": "I", "slot": 4, "flip": 1, "title": "I → fila 5, girada", "text": "Agujeros en las columnas 3, 4 y 5."}, {"type": "row", "id": "D", "slot": 1, "flip": 1, "title": "D → fila 2, girada", "text": "Agujeros en las columnas 1 y 3."}, {"type": "row", "id": "H", "slot": 2, "flip": 1, "title": "H → fila 3, girada", "text": "Agujeros en las columnas 2 y 5."}, {"type": "row", "id": "B", "slot": 3, "flip": 1, "title": "B → fila 4, girada", "text": "Agujeros en la columna 2."}, {"type": "col", "id": "J", "slot": 1, "flip": 0, "title": "J → columna 2", "text": "La columna pide agujeros en las filas 1, 3 y 4: solo encaja esta."}, {"type": "col", "id": "C", "slot": 2, "flip": 1, "title": "C → columna 3, girada", "text": "La columna pide agujeros en las filas 1, 2 y 5: solo encaja esta."}, {"type": "col", "id": "F", "slot": 4, "flip": 0, "title": "F → columna 5", "text": "La columna pide agujeros en las filas 1, 3 y 5: solo encaja esta."}, {"type": "col", "id": "E", "slot": 0, "flip": 0, "title": "E → columna 1", "text": "La columna pide agujeros en las filas 1 y 2: solo encaja esta."}, {"type": "col", "id": "G", "slot": 3, "flip": 0, "title": "G → columna 4", "text": "La columna pide agujeros en la fila 5: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "I", "flip": 0}, {"id": "B", "flip": 0}, {"id": "H", "flip": 0}, {"id": "D", "flip": 0}, {"id": "A", "flip": 0}], "cols": [{"id": "F", "flip": 0}, {"id": "G", "flip": 1}, {"id": "C", "flip": 0}, {"id": "J", "flip": 1}, {"id": "E", "flip": 1}], "family": 9, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo A B D H I · arriba C E F G J", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "A", "slot": 4, "flip": 0, "title": "A → fila 5", "text": "Agujeros en las columnas 1, 3, 4 y 5."}, {"type": "row", "id": "I", "slot": 0, "flip": 0, "title": "I → fila 1", "text": "Agujeros en las columnas 1, 2 y 3."}, {"type": "row", "id": "H", "slot": 2, "flip": 0, "title": "H → fila 3", "text": "Agujeros en las columnas 1 y 4."}, {"type": "row", "id": "D", "slot": 3, "flip": 0, "title": "D → fila 4", "text": "Agujeros en las columnas 3 y 5."}, {"type": "row", "id": "B", "slot": 1, "flip": 0, "title": "B → fila 2", "text": "Agujeros en la columna 4."}, {"type": "col", "id": "F", "slot": 0, "flip": 0, "title": "F → columna 1", "text": "La columna pide agujeros en las filas 1, 3 y 5: solo encaja esta."}, {"type": "col", "id": "C", "slot": 2, "flip": 0, "title": "C → columna 3", "text": "La columna pide agujeros en las filas 1, 4 y 5: solo encaja esta."}, {"type": "col", "id": "J", "slot": 3, "flip": 1, "title": "J → columna 4, girada", "text": "La columna pide agujeros en las filas 2, 3 y 5: solo encaja esta."}, {"type": "col", "id": "E", "slot": 4, "flip": 1, "title": "E → columna 5, girada", "text": "La columna pide agujeros en las filas 4 y 5: solo encaja esta."}, {"type": "col", "id": "G", "slot": 1, "flip": 1, "title": "G → columna 2, girada", "text": "La columna pide agujeros en la fila 1: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "I", "flip": 1}, {"id": "B", "flip": 1}, {"id": "H", "flip": 1}, {"id": "D", "flip": 1}, {"id": "A", "flip": 1}], "cols": [{"id": "E", "flip": 1}, {"id": "J", "flip": 1}, {"id": "C", "flip": 0}, {"id": "G", "flip": 1}, {"id": "F", "flip": 0}], "family": 8, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo A B D H I · arriba C E F G J", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "A", "slot": 4, "flip": 1, "title": "A → fila 5, girada", "text": "Agujeros en las columnas 1, 2, 3 y 5."}, {"type": "row", "id": "I", "slot": 0, "flip": 1, "title": "I → fila 1, girada", "text": "Agujeros en las columnas 3, 4 y 5."}, {"type": "row", "id": "H", "slot": 2, "flip": 1, "title": "H → fila 3, girada", "text": "Agujeros en las columnas 2 y 5."}, {"type": "row", "id": "D", "slot": 3, "flip": 1, "title": "D → fila 4, girada", "text": "Agujeros en las columnas 1 y 3."}, {"type": "row", "id": "B", "slot": 1, "flip": 1, "title": "B → fila 2, girada", "text": "Agujeros en la columna 2."}, {"type": "col", "id": "J", "slot": 1, "flip": 1, "title": "J → columna 2, girada", "text": "La columna pide agujeros en las filas 2, 3 y 5: solo encaja esta."}, {"type": "col", "id": "C", "slot": 2, "flip": 0, "title": "C → columna 3", "text": "La columna pide agujeros en las filas 1, 4 y 5: solo encaja esta."}, {"type": "col", "id": "F", "slot": 4, "flip": 0, "title": "F → columna 5", "text": "La columna pide agujeros en las filas 1, 3 y 5: solo encaja esta."}, {"type": "col", "id": "E", "slot": 0, "flip": 1, "title": "E → columna 1, girada", "text": "La columna pide agujeros en las filas 4 y 5: solo encaja esta."}, {"type": "col", "id": "G", "slot": 3, "flip": 1, "title": "G → columna 4, girada", "text": "La columna pide agujeros en la fila 1: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "A", "flip": 0}, {"id": "D", "flip": 1}, {"id": "H", "flip": 1}, {"id": "B", "flip": 1}, {"id": "J", "flip": 1}], "cols": [{"id": "E", "flip": 0}, {"id": "I", "flip": 1}, {"id": "C", "flip": 1}, {"id": "G", "flip": 1}, {"id": "F", "flip": 0}], "family": 10, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo A B D H J · arriba C E F G I", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "A", "slot": 0, "flip": 0, "title": "A → fila 1", "text": "Agujeros en las columnas 1, 3, 4 y 5."}, {"type": "row", "id": "J", "slot": 4, "flip": 1, "title": "J → fila 5, girada", "text": "Agujeros en las columnas 2, 3 y 5."}, {"type": "row", "id": "D", "slot": 1, "flip": 1, "title": "D → fila 2, girada", "text": "Agujeros en las columnas 1 y 3."}, {"type": "row", "id": "H", "slot": 2, "flip": 1, "title": "H → fila 3, girada", "text": "Agujeros en las columnas 2 y 5."}, {"type": "row", "id": "B", "slot": 3, "flip": 1, "title": "B → fila 4, girada", "text": "Agujeros en la columna 2."}, {"type": "col", "id": "I", "slot": 1, "flip": 1, "title": "I → columna 2, girada", "text": "La columna pide agujeros en las filas 3, 4 y 5: solo encaja esta."}, {"type": "col", "id": "C", "slot": 2, "flip": 1, "title": "C → columna 3, girada", "text": "La columna pide agujeros en las filas 1, 2 y 5: solo encaja esta."}, {"type": "col", "id": "F", "slot": 4, "flip": 0, "title": "F → columna 5", "text": "La columna pide agujeros en las filas 1, 3 y 5: solo encaja esta."}, {"type": "col", "id": "E", "slot": 0, "flip": 0, "title": "E → columna 1", "text": "La columna pide agujeros en las filas 1 y 2: solo encaja esta."}, {"type": "col", "id": "G", "slot": 3, "flip": 1, "title": "G → columna 4, girada", "text": "La columna pide agujeros en la fila 1: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "A", "flip": 1}, {"id": "D", "flip": 0}, {"id": "H", "flip": 0}, {"id": "B", "flip": 0}, {"id": "J", "flip": 0}], "cols": [{"id": "F", "flip": 0}, {"id": "G", "flip": 1}, {"id": "C", "flip": 1}, {"id": "I", "flip": 1}, {"id": "E", "flip": 0}], "family": 11, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo A B D H J · arriba C E F G I", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "A", "slot": 0, "flip": 1, "title": "A → fila 1, girada", "text": "Agujeros en las columnas 1, 2, 3 y 5."}, {"type": "row", "id": "J", "slot": 4, "flip": 0, "title": "J → fila 5", "text": "Agujeros en las columnas 1, 3 y 4."}, {"type": "row", "id": "D", "slot": 1, "flip": 0, "title": "D → fila 2", "text": "Agujeros en las columnas 3 y 5."}, {"type": "row", "id": "H", "slot": 2, "flip": 0, "title": "H → fila 3", "text": "Agujeros en las columnas 1 y 4."}, {"type": "row", "id": "B", "slot": 3, "flip": 0, "title": "B → fila 4", "text": "Agujeros en la columna 4."}, {"type": "col", "id": "F", "slot": 0, "flip": 0, "title": "F → columna 1", "text": "La columna pide agujeros en las filas 1, 3 y 5: solo encaja esta."}, {"type": "col", "id": "C", "slot": 2, "flip": 1, "title": "C → columna 3, girada", "text": "La columna pide agujeros en las filas 1, 2 y 5: solo encaja esta."}, {"type": "col", "id": "I", "slot": 3, "flip": 1, "title": "I → columna 4, girada", "text": "La columna pide agujeros en las filas 3, 4 y 5: solo encaja esta."}, {"type": "col", "id": "E", "slot": 4, "flip": 0, "title": "E → columna 5", "text": "La columna pide agujeros en las filas 1 y 2: solo encaja esta."}, {"type": "col", "id": "G", "slot": 1, "flip": 1, "title": "G → columna 2, girada", "text": "La columna pide agujeros en la fila 1: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "J", "flip": 0}, {"id": "B", "flip": 0}, {"id": "H", "flip": 0}, {"id": "D", "flip": 0}, {"id": "A", "flip": 1}], "cols": [{"id": "F", "flip": 0}, {"id": "G", "flip": 0}, {"id": "C", "flip": 0}, {"id": "I", "flip": 0}, {"id": "E", "flip": 1}], "family": 10, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo A B D H J · arriba C E F G I", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "A", "slot": 4, "flip": 1, "title": "A → fila 5, girada", "text": "Agujeros en las columnas 1, 2, 3 y 5."}, {"type": "row", "id": "J", "slot": 0, "flip": 0, "title": "J → fila 1", "text": "Agujeros en las columnas 1, 3 y 4."}, {"type": "row", "id": "H", "slot": 2, "flip": 0, "title": "H → fila 3", "text": "Agujeros en las columnas 1 y 4."}, {"type": "row", "id": "D", "slot": 3, "flip": 0, "title": "D → fila 4", "text": "Agujeros en las columnas 3 y 5."}, {"type": "row", "id": "B", "slot": 1, "flip": 0, "title": "B → fila 2", "text": "Agujeros en la columna 4."}, {"type": "col", "id": "F", "slot": 0, "flip": 0, "title": "F → columna 1", "text": "La columna pide agujeros en las filas 1, 3 y 5: solo encaja esta."}, {"type": "col", "id": "C", "slot": 2, "flip": 0, "title": "C → columna 3", "text": "La columna pide agujeros en las filas 1, 4 y 5: solo encaja esta."}, {"type": "col", "id": "I", "slot": 3, "flip": 0, "title": "I → columna 4", "text": "La columna pide agujeros en las filas 1, 2 y 3: solo encaja esta."}, {"type": "col", "id": "E", "slot": 4, "flip": 1, "title": "E → columna 5, girada", "text": "La columna pide agujeros en las filas 4 y 5: solo encaja esta."}, {"type": "col", "id": "G", "slot": 1, "flip": 0, "title": "G → columna 2", "text": "La columna pide agujeros en la fila 5: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "J", "flip": 1}, {"id": "B", "flip": 1}, {"id": "H", "flip": 1}, {"id": "D", "flip": 1}, {"id": "A", "flip": 0}], "cols": [{"id": "E", "flip": 1}, {"id": "I", "flip": 0}, {"id": "C", "flip": 0}, {"id": "G", "flip": 0}, {"id": "F", "flip": 0}], "family": 11, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo A B D H J · arriba C E F G I", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "A", "slot": 4, "flip": 0, "title": "A → fila 5", "text": "Agujeros en las columnas 1, 3, 4 y 5."}, {"type": "row", "id": "J", "slot": 0, "flip": 1, "title": "J → fila 1, girada", "text": "Agujeros en las columnas 2, 3 y 5."}, {"type": "row", "id": "H", "slot": 2, "flip": 1, "title": "H → fila 3, girada", "text": "Agujeros en las columnas 2 y 5."}, {"type": "row", "id": "D", "slot": 3, "flip": 1, "title": "D → fila 4, girada", "text": "Agujeros en las columnas 1 y 3."}, {"type": "row", "id": "B", "slot": 1, "flip": 1, "title": "B → fila 2, girada", "text": "Agujeros en la columna 2."}, {"type": "col", "id": "I", "slot": 1, "flip": 0, "title": "I → columna 2", "text": "La columna pide agujeros en las filas 1, 2 y 3: solo encaja esta."}, {"type": "col", "id": "C", "slot": 2, "flip": 0, "title": "C → columna 3", "text": "La columna pide agujeros en las filas 1, 4 y 5: solo encaja esta."}, {"type": "col", "id": "F", "slot": 4, "flip": 0, "title": "F → columna 5", "text": "La columna pide agujeros en las filas 1, 3 y 5: solo encaja esta."}, {"type": "col", "id": "E", "slot": 0, "flip": 1, "title": "E → columna 1, girada", "text": "La columna pide agujeros en las filas 4 y 5: solo encaja esta."}, {"type": "col", "id": "G", "slot": 3, "flip": 0, "title": "G → columna 4", "text": "La columna pide agujeros en la fila 5: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "A", "flip": 0}, {"id": "E", "flip": 0}, {"id": "I", "flip": 1}, {"id": "G", "flip": 0}, {"id": "H", "flip": 0}], "cols": [{"id": "C", "flip": 1}, {"id": "B", "flip": 1}, {"id": "D", "flip": 1}, {"id": "F", "flip": 0}, {"id": "J", "flip": 0}], "family": 12, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo A E G H I · arriba B C D F J", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "A", "slot": 0, "flip": 0, "title": "A → fila 1", "text": "Agujeros en las columnas 1, 3, 4 y 5."}, {"type": "row", "id": "I", "slot": 2, "flip": 1, "title": "I → fila 3, girada", "text": "Agujeros en las columnas 3, 4 y 5."}, {"type": "row", "id": "E", "slot": 1, "flip": 0, "title": "E → fila 2", "text": "Agujeros en las columnas 1 y 2."}, {"type": "row", "id": "H", "slot": 4, "flip": 0, "title": "H → fila 5", "text": "Agujeros en las columnas 1 y 4."}, {"type": "row", "id": "G", "slot": 3, "flip": 0, "title": "G → fila 4", "text": "Agujeros en la columna 5."}, {"type": "col", "id": "C", "slot": 0, "flip": 1, "title": "C → columna 1, girada", "text": "La columna pide agujeros en las filas 1, 2 y 5: solo encaja esta."}, {"type": "col", "id": "F", "slot": 3, "flip": 0, "title": "F → columna 4", "text": "La columna pide agujeros en las filas 1, 3 y 5: solo encaja esta."}, {"type": "col", "id": "J", "slot": 4, "flip": 0, "title": "J → columna 5", "text": "La columna pide agujeros en las filas 1, 3 y 4: solo encaja esta."}, {"type": "col", "id": "D", "slot": 2, "flip": 1, "title": "D → columna 3, girada", "text": "La columna pide agujeros en las filas 1 y 3: solo encaja esta."}, {"type": "col", "id": "B", "slot": 1, "flip": 1, "title": "B → columna 2, girada", "text": "La columna pide agujeros en la fila 2: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "A", "flip": 1}, {"id": "E", "flip": 1}, {"id": "I", "flip": 0}, {"id": "G", "flip": 1}, {"id": "H", "flip": 1}], "cols": [{"id": "J", "flip": 0}, {"id": "F", "flip": 0}, {"id": "D", "flip": 1}, {"id": "B", "flip": 1}, {"id": "C", "flip": 1}], "family": 13, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo A E G H I · arriba B C D F J", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "A", "slot": 0, "flip": 1, "title": "A → fila 1, girada", "text": "Agujeros en las columnas 1, 2, 3 y 5."}, {"type": "row", "id": "I", "slot": 2, "flip": 0, "title": "I → fila 3", "text": "Agujeros en las columnas 1, 2 y 3."}, {"type": "row", "id": "E", "slot": 1, "flip": 1, "title": "E → fila 2, girada", "text": "Agujeros en las columnas 4 y 5."}, {"type": "row", "id": "H", "slot": 4, "flip": 1, "title": "H → fila 5, girada", "text": "Agujeros en las columnas 2 y 5."}, {"type": "row", "id": "G", "slot": 3, "flip": 1, "title": "G → fila 4, girada", "text": "Agujeros en la columna 1."}, {"type": "col", "id": "J", "slot": 0, "flip": 0, "title": "J → columna 1", "text": "La columna pide agujeros en las filas 1, 3 y 4: solo encaja esta."}, {"type": "col", "id": "F", "slot": 1, "flip": 0, "title": "F → columna 2", "text": "La columna pide agujeros en las filas 1, 3 y 5: solo encaja esta."}, {"type": "col", "id": "C", "slot": 4, "flip": 1, "title": "C → columna 5, girada", "text": "La columna pide agujeros en las filas 1, 2 y 5: solo encaja esta."}, {"type": "col", "id": "D", "slot": 2, "flip": 1, "title": "D → columna 3, girada", "text": "La columna pide agujeros en las filas 1 y 3: solo encaja esta."}, {"type": "col", "id": "B", "slot": 3, "flip": 1, "title": "B → columna 4, girada", "text": "La columna pide agujeros en la fila 2: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "H", "flip": 0}, {"id": "G", "flip": 0}, {"id": "I", "flip": 1}, {"id": "E", "flip": 0}, {"id": "A", "flip": 0}], "cols": [{"id": "C", "flip": 0}, {"id": "B", "flip": 0}, {"id": "D", "flip": 0}, {"id": "F", "flip": 0}, {"id": "J", "flip": 1}], "family": 13, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo A E G H I · arriba B C D F J", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "A", "slot": 4, "flip": 0, "title": "A → fila 5", "text": "Agujeros en las columnas 1, 3, 4 y 5."}, {"type": "row", "id": "I", "slot": 2, "flip": 1, "title": "I → fila 3, girada", "text": "Agujeros en las columnas 3, 4 y 5."}, {"type": "row", "id": "H", "slot": 0, "flip": 0, "title": "H → fila 1", "text": "Agujeros en las columnas 1 y 4."}, {"type": "row", "id": "E", "slot": 3, "flip": 0, "title": "E → fila 4", "text": "Agujeros en las columnas 1 y 2."}, {"type": "row", "id": "G", "slot": 1, "flip": 0, "title": "G → fila 2", "text": "Agujeros en la columna 5."}, {"type": "col", "id": "C", "slot": 0, "flip": 0, "title": "C → columna 1", "text": "La columna pide agujeros en las filas 1, 4 y 5: solo encaja esta."}, {"type": "col", "id": "F", "slot": 3, "flip": 0, "title": "F → columna 4", "text": "La columna pide agujeros en las filas 1, 3 y 5: solo encaja esta."}, {"type": "col", "id": "J", "slot": 4, "flip": 1, "title": "J → columna 5, girada", "text": "La columna pide agujeros en las filas 2, 3 y 5: solo encaja esta."}, {"type": "col", "id": "D", "slot": 2, "flip": 0, "title": "D → columna 3", "text": "La columna pide agujeros en las filas 3 y 5: solo encaja esta."}, {"type": "col", "id": "B", "slot": 1, "flip": 0, "title": "B → columna 2", "text": "La columna pide agujeros en la fila 4: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "H", "flip": 1}, {"id": "G", "flip": 1}, {"id": "I", "flip": 0}, {"id": "E", "flip": 1}, {"id": "A", "flip": 1}], "cols": [{"id": "J", "flip": 1}, {"id": "F", "flip": 0}, {"id": "D", "flip": 0}, {"id": "B", "flip": 0}, {"id": "C", "flip": 0}], "family": 12, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo A E G H I · arriba B C D F J", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "A", "slot": 4, "flip": 1, "title": "A → fila 5, girada", "text": "Agujeros en las columnas 1, 2, 3 y 5."}, {"type": "row", "id": "I", "slot": 2, "flip": 0, "title": "I → fila 3", "text": "Agujeros en las columnas 1, 2 y 3."}, {"type": "row", "id": "H", "slot": 0, "flip": 1, "title": "H → fila 1, girada", "text": "Agujeros en las columnas 2 y 5."}, {"type": "row", "id": "E", "slot": 3, "flip": 1, "title": "E → fila 4, girada", "text": "Agujeros en las columnas 4 y 5."}, {"type": "row", "id": "G", "slot": 1, "flip": 1, "title": "G → fila 2, girada", "text": "Agujeros en la columna 1."}, {"type": "col", "id": "J", "slot": 0, "flip": 1, "title": "J → columna 1, girada", "text": "La columna pide agujeros en las filas 2, 3 y 5: solo encaja esta."}, {"type": "col", "id": "F", "slot": 1, "flip": 0, "title": "F → columna 2", "text": "La columna pide agujeros en las filas 1, 3 y 5: solo encaja esta."}, {"type": "col", "id": "C", "slot": 4, "flip": 0, "title": "C → columna 5", "text": "La columna pide agujeros en las filas 1, 4 y 5: solo encaja esta."}, {"type": "col", "id": "D", "slot": 2, "flip": 0, "title": "D → columna 3", "text": "La columna pide agujeros en las filas 3 y 5: solo encaja esta."}, {"type": "col", "id": "B", "slot": 3, "flip": 0, "title": "B → columna 4", "text": "La columna pide agujeros en la fila 4: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "A", "flip": 0}, {"id": "G", "flip": 1}, {"id": "J", "flip": 0}, {"id": "H", "flip": 1}, {"id": "E", "flip": 1}], "cols": [{"id": "I", "flip": 0}, {"id": "B", "flip": 0}, {"id": "D", "flip": 1}, {"id": "F", "flip": 0}, {"id": "C", "flip": 0}], "family": 14, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo A E G H J · arriba B C D F I", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "A", "slot": 0, "flip": 0, "title": "A → fila 1", "text": "Agujeros en las columnas 1, 3, 4 y 5."}, {"type": "row", "id": "J", "slot": 2, "flip": 0, "title": "J → fila 3", "text": "Agujeros en las columnas 1, 3 y 4."}, {"type": "row", "id": "H", "slot": 3, "flip": 1, "title": "H → fila 4, girada", "text": "Agujeros en las columnas 2 y 5."}, {"type": "row", "id": "E", "slot": 4, "flip": 1, "title": "E → fila 5, girada", "text": "Agujeros en las columnas 4 y 5."}, {"type": "row", "id": "G", "slot": 1, "flip": 1, "title": "G → fila 2, girada", "text": "Agujeros en la columna 1."}, {"type": "col", "id": "I", "slot": 0, "flip": 0, "title": "I → columna 1", "text": "La columna pide agujeros en las filas 1, 2 y 3: solo encaja esta."}, {"type": "col", "id": "F", "slot": 3, "flip": 0, "title": "F → columna 4", "text": "La columna pide agujeros en las filas 1, 3 y 5: solo encaja esta."}, {"type": "col", "id": "C", "slot": 4, "flip": 0, "title": "C → columna 5", "text": "La columna pide agujeros en las filas 1, 4 y 5: solo encaja esta."}, {"type": "col", "id": "D", "slot": 2, "flip": 1, "title": "D → columna 3, girada", "text": "La columna pide agujeros en las filas 1 y 3: solo encaja esta."}, {"type": "col", "id": "B", "slot": 1, "flip": 0, "title": "B → columna 2", "text": "La columna pide agujeros en la fila 4: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "A", "flip": 1}, {"id": "G", "flip": 0}, {"id": "J", "flip": 1}, {"id": "H", "flip": 0}, {"id": "E", "flip": 0}], "cols": [{"id": "C", "flip": 0}, {"id": "F", "flip": 0}, {"id": "D", "flip": 1}, {"id": "B", "flip": 0}, {"id": "I", "flip": 0}], "family": 15, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo A E G H J · arriba B C D F I", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "A", "slot": 0, "flip": 1, "title": "A → fila 1, girada", "text": "Agujeros en las columnas 1, 2, 3 y 5."}, {"type": "row", "id": "J", "slot": 2, "flip": 1, "title": "J → fila 3, girada", "text": "Agujeros en las columnas 2, 3 y 5."}, {"type": "row", "id": "H", "slot": 3, "flip": 0, "title": "H → fila 4", "text": "Agujeros en las columnas 1 y 4."}, {"type": "row", "id": "E", "slot": 4, "flip": 0, "title": "E → fila 5", "text": "Agujeros en las columnas 1 y 2."}, {"type": "row", "id": "G", "slot": 1, "flip": 0, "title": "G → fila 2", "text": "Agujeros en la columna 5."}, {"type": "col", "id": "C", "slot": 0, "flip": 0, "title": "C → columna 1", "text": "La columna pide agujeros en las filas 1, 4 y 5: solo encaja esta."}, {"type": "col", "id": "F", "slot": 1, "flip": 0, "title": "F → columna 2", "text": "La columna pide agujeros en las filas 1, 3 y 5: solo encaja esta."}, {"type": "col", "id": "I", "slot": 4, "flip": 0, "title": "I → columna 5", "text": "La columna pide agujeros en las filas 1, 2 y 3: solo encaja esta."}, {"type": "col", "id": "D", "slot": 2, "flip": 1, "title": "D → columna 3, girada", "text": "La columna pide agujeros en las filas 1 y 3: solo encaja esta."}, {"type": "col", "id": "B", "slot": 3, "flip": 0, "title": "B → columna 4", "text": "La columna pide agujeros en la fila 4: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "E", "flip": 0}, {"id": "H", "flip": 0}, {"id": "J", "flip": 1}, {"id": "G", "flip": 0}, {"id": "A", "flip": 1}], "cols": [{"id": "C", "flip": 1}, {"id": "F", "flip": 0}, {"id": "D", "flip": 0}, {"id": "B", "flip": 1}, {"id": "I", "flip": 1}], "family": 14, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo A E G H J · arriba B C D F I", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "A", "slot": 4, "flip": 1, "title": "A → fila 5, girada", "text": "Agujeros en las columnas 1, 2, 3 y 5."}, {"type": "row", "id": "J", "slot": 2, "flip": 1, "title": "J → fila 3, girada", "text": "Agujeros en las columnas 2, 3 y 5."}, {"type": "row", "id": "E", "slot": 0, "flip": 0, "title": "E → fila 1", "text": "Agujeros en las columnas 1 y 2."}, {"type": "row", "id": "H", "slot": 1, "flip": 0, "title": "H → fila 2", "text": "Agujeros en las columnas 1 y 4."}, {"type": "row", "id": "G", "slot": 3, "flip": 0, "title": "G → fila 4", "text": "Agujeros en la columna 5."}, {"type": "col", "id": "C", "slot": 0, "flip": 1, "title": "C → columna 1, girada", "text": "La columna pide agujeros en las filas 1, 2 y 5: solo encaja esta."}, {"type": "col", "id": "F", "slot": 1, "flip": 0, "title": "F → columna 2", "text": "La columna pide agujeros en las filas 1, 3 y 5: solo encaja esta."}, {"type": "col", "id": "I", "slot": 4, "flip": 1, "title": "I → columna 5, girada", "text": "La columna pide agujeros en las filas 3, 4 y 5: solo encaja esta."}, {"type": "col", "id": "D", "slot": 2, "flip": 0, "title": "D → columna 3", "text": "La columna pide agujeros en las filas 3 y 5: solo encaja esta."}, {"type": "col", "id": "B", "slot": 3, "flip": 1, "title": "B → columna 4, girada", "text": "La columna pide agujeros en la fila 2: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "E", "flip": 1}, {"id": "H", "flip": 1}, {"id": "J", "flip": 0}, {"id": "G", "flip": 1}, {"id": "A", "flip": 0}], "cols": [{"id": "I", "flip": 1}, {"id": "B", "flip": 1}, {"id": "D", "flip": 0}, {"id": "F", "flip": 0}, {"id": "C", "flip": 1}], "family": 15, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo A E G H J · arriba B C D F I", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "A", "slot": 4, "flip": 0, "title": "A → fila 5", "text": "Agujeros en las columnas 1, 3, 4 y 5."}, {"type": "row", "id": "J", "slot": 2, "flip": 0, "title": "J → fila 3", "text": "Agujeros en las columnas 1, 3 y 4."}, {"type": "row", "id": "E", "slot": 0, "flip": 1, "title": "E → fila 1, girada", "text": "Agujeros en las columnas 4 y 5."}, {"type": "row", "id": "H", "slot": 1, "flip": 1, "title": "H → fila 2, girada", "text": "Agujeros en las columnas 2 y 5."}, {"type": "row", "id": "G", "slot": 3, "flip": 1, "title": "G → fila 4, girada", "text": "Agujeros en la columna 1."}, {"type": "col", "id": "I", "slot": 0, "flip": 1, "title": "I → columna 1, girada", "text": "La columna pide agujeros en las filas 3, 4 y 5: solo encaja esta."}, {"type": "col", "id": "F", "slot": 3, "flip": 0, "title": "F → columna 4", "text": "La columna pide agujeros en las filas 1, 3 y 5: solo encaja esta."}, {"type": "col", "id": "C", "slot": 4, "flip": 1, "title": "C → columna 5, girada", "text": "La columna pide agujeros en las filas 1, 2 y 5: solo encaja esta."}, {"type": "col", "id": "D", "slot": 2, "flip": 0, "title": "D → columna 3", "text": "La columna pide agujeros en las filas 3 y 5: solo encaja esta."}, {"type": "col", "id": "B", "slot": 1, "flip": 1, "title": "B → columna 2, girada", "text": "La columna pide agujeros en la fila 2: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "C", "flip": 0}, {"id": "F", "flip": 0}, {"id": "D", "flip": 1}, {"id": "B", "flip": 0}, {"id": "I", "flip": 0}], "cols": [{"id": "A", "flip": 1}, {"id": "G", "flip": 0}, {"id": "J", "flip": 1}, {"id": "H", "flip": 0}, {"id": "E", "flip": 0}], "family": 15, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo B C D F I · arriba A E G H J", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "C", "slot": 0, "flip": 0, "title": "C → fila 1", "text": "Agujeros en las columnas 1, 4 y 5."}, {"type": "row", "id": "F", "slot": 1, "flip": 0, "title": "F → fila 2", "text": "Agujeros en las columnas 1, 3 y 5."}, {"type": "row", "id": "I", "slot": 4, "flip": 0, "title": "I → fila 5", "text": "Agujeros en las columnas 1, 2 y 3."}, {"type": "row", "id": "D", "slot": 2, "flip": 1, "title": "D → fila 3, girada", "text": "Agujeros en las columnas 1 y 3."}, {"type": "row", "id": "B", "slot": 3, "flip": 0, "title": "B → fila 4", "text": "Agujeros en la columna 4."}, {"type": "col", "id": "A", "slot": 0, "flip": 1, "title": "A → columna 1, girada", "text": "La columna pide agujeros en las filas 1, 2, 3 y 5: solo encaja esta."}, {"type": "col", "id": "J", "slot": 2, "flip": 1, "title": "J → columna 3, girada", "text": "La columna pide agujeros en las filas 2, 3 y 5: solo encaja esta."}, {"type": "col", "id": "H", "slot": 3, "flip": 0, "title": "H → columna 4", "text": "La columna pide agujeros en las filas 1 y 4: solo encaja esta."}, {"type": "col", "id": "E", "slot": 4, "flip": 0, "title": "E → columna 5", "text": "La columna pide agujeros en las filas 1 y 2: solo encaja esta."}, {"type": "col", "id": "G", "slot": 1, "flip": 0, "title": "G → columna 2", "text": "La columna pide agujeros en la fila 5: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "C", "flip": 1}, {"id": "F", "flip": 0}, {"id": "D", "flip": 0}, {"id": "B", "flip": 1}, {"id": "I", "flip": 1}], "cols": [{"id": "E", "flip": 0}, {"id": "H", "flip": 0}, {"id": "J", "flip": 1}, {"id": "G", "flip": 0}, {"id": "A", "flip": 1}], "family": 14, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo B C D F I · arriba A E G H J", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "C", "slot": 0, "flip": 1, "title": "C → fila 1, girada", "text": "Agujeros en las columnas 1, 2 y 5."}, {"type": "row", "id": "F", "slot": 1, "flip": 0, "title": "F → fila 2", "text": "Agujeros en las columnas 1, 3 y 5."}, {"type": "row", "id": "I", "slot": 4, "flip": 1, "title": "I → fila 5, girada", "text": "Agujeros en las columnas 3, 4 y 5."}, {"type": "row", "id": "D", "slot": 2, "flip": 0, "title": "D → fila 3", "text": "Agujeros en las columnas 3 y 5."}, {"type": "row", "id": "B", "slot": 3, "flip": 1, "title": "B → fila 4, girada", "text": "Agujeros en la columna 2."}, {"type": "col", "id": "A", "slot": 4, "flip": 1, "title": "A → columna 5, girada", "text": "La columna pide agujeros en las filas 1, 2, 3 y 5: solo encaja esta."}, {"type": "col", "id": "J", "slot": 2, "flip": 1, "title": "J → columna 3, girada", "text": "La columna pide agujeros en las filas 2, 3 y 5: solo encaja esta."}, {"type": "col", "id": "E", "slot": 0, "flip": 0, "title": "E → columna 1", "text": "La columna pide agujeros en las filas 1 y 2: solo encaja esta."}, {"type": "col", "id": "H", "slot": 1, "flip": 0, "title": "H → columna 2", "text": "La columna pide agujeros en las filas 1 y 4: solo encaja esta."}, {"type": "col", "id": "G", "slot": 3, "flip": 0, "title": "G → columna 4", "text": "La columna pide agujeros en la fila 5: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "I", "flip": 0}, {"id": "B", "flip": 0}, {"id": "D", "flip": 1}, {"id": "F", "flip": 0}, {"id": "C", "flip": 0}], "cols": [{"id": "A", "flip": 0}, {"id": "G", "flip": 1}, {"id": "J", "flip": 0}, {"id": "H", "flip": 1}, {"id": "E", "flip": 1}], "family": 14, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo B C D F I · arriba A E G H J", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "I", "slot": 0, "flip": 0, "title": "I → fila 1", "text": "Agujeros en las columnas 1, 2 y 3."}, {"type": "row", "id": "F", "slot": 3, "flip": 0, "title": "F → fila 4", "text": "Agujeros en las columnas 1, 3 y 5."}, {"type": "row", "id": "C", "slot": 4, "flip": 0, "title": "C → fila 5", "text": "Agujeros en las columnas 1, 4 y 5."}, {"type": "row", "id": "D", "slot": 2, "flip": 1, "title": "D → fila 3, girada", "text": "Agujeros en las columnas 1 y 3."}, {"type": "row", "id": "B", "slot": 1, "flip": 0, "title": "B → fila 2", "text": "Agujeros en la columna 4."}, {"type": "col", "id": "A", "slot": 0, "flip": 0, "title": "A → columna 1", "text": "La columna pide agujeros en las filas 1, 3, 4 y 5: solo encaja esta."}, {"type": "col", "id": "J", "slot": 2, "flip": 0, "title": "J → columna 3", "text": "La columna pide agujeros en las filas 1, 3 y 4: solo encaja esta."}, {"type": "col", "id": "H", "slot": 3, "flip": 1, "title": "H → columna 4, girada", "text": "La columna pide agujeros en las filas 2 y 5: solo encaja esta."}, {"type": "col", "id": "E", "slot": 4, "flip": 1, "title": "E → columna 5, girada", "text": "La columna pide agujeros en las filas 4 y 5: solo encaja esta."}, {"type": "col", "id": "G", "slot": 1, "flip": 1, "title": "G → columna 2, girada", "text": "La columna pide agujeros en la fila 1: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "I", "flip": 1}, {"id": "B", "flip": 1}, {"id": "D", "flip": 0}, {"id": "F", "flip": 0}, {"id": "C", "flip": 1}], "cols": [{"id": "E", "flip": 1}, {"id": "H", "flip": 1}, {"id": "J", "flip": 0}, {"id": "G", "flip": 1}, {"id": "A", "flip": 0}], "family": 15, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo B C D F I · arriba A E G H J", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "I", "slot": 0, "flip": 1, "title": "I → fila 1, girada", "text": "Agujeros en las columnas 3, 4 y 5."}, {"type": "row", "id": "F", "slot": 3, "flip": 0, "title": "F → fila 4", "text": "Agujeros en las columnas 1, 3 y 5."}, {"type": "row", "id": "C", "slot": 4, "flip": 1, "title": "C → fila 5, girada", "text": "Agujeros en las columnas 1, 2 y 5."}, {"type": "row", "id": "D", "slot": 2, "flip": 0, "title": "D → fila 3", "text": "Agujeros en las columnas 3 y 5."}, {"type": "row", "id": "B", "slot": 1, "flip": 1, "title": "B → fila 2, girada", "text": "Agujeros en la columna 2."}, {"type": "col", "id": "A", "slot": 4, "flip": 0, "title": "A → columna 5", "text": "La columna pide agujeros en las filas 1, 3, 4 y 5: solo encaja esta."}, {"type": "col", "id": "J", "slot": 2, "flip": 0, "title": "J → columna 3", "text": "La columna pide agujeros en las filas 1, 3 y 4: solo encaja esta."}, {"type": "col", "id": "E", "slot": 0, "flip": 1, "title": "E → columna 1, girada", "text": "La columna pide agujeros en las filas 4 y 5: solo encaja esta."}, {"type": "col", "id": "H", "slot": 1, "flip": 1, "title": "H → columna 2, girada", "text": "La columna pide agujeros en las filas 2 y 5: solo encaja esta."}, {"type": "col", "id": "G", "slot": 3, "flip": 1, "title": "G → columna 4, girada", "text": "La columna pide agujeros en la fila 1: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "C", "flip": 0}, {"id": "B", "flip": 0}, {"id": "D", "flip": 0}, {"id": "F", "flip": 0}, {"id": "J", "flip": 1}], "cols": [{"id": "H", "flip": 0}, {"id": "G", "flip": 0}, {"id": "I", "flip": 1}, {"id": "E", "flip": 0}, {"id": "A", "flip": 0}], "family": 13, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo B C D F J · arriba A E G H I", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "C", "slot": 0, "flip": 0, "title": "C → fila 1", "text": "Agujeros en las columnas 1, 4 y 5."}, {"type": "row", "id": "F", "slot": 3, "flip": 0, "title": "F → fila 4", "text": "Agujeros en las columnas 1, 3 y 5."}, {"type": "row", "id": "J", "slot": 4, "flip": 1, "title": "J → fila 5, girada", "text": "Agujeros en las columnas 2, 3 y 5."}, {"type": "row", "id": "D", "slot": 2, "flip": 0, "title": "D → fila 3", "text": "Agujeros en las columnas 3 y 5."}, {"type": "row", "id": "B", "slot": 1, "flip": 0, "title": "B → fila 2", "text": "Agujeros en la columna 4."}, {"type": "col", "id": "A", "slot": 4, "flip": 0, "title": "A → columna 5", "text": "La columna pide agujeros en las filas 1, 3, 4 y 5: solo encaja esta."}, {"type": "col", "id": "I", "slot": 2, "flip": 1, "title": "I → columna 3, girada", "text": "La columna pide agujeros en las filas 3, 4 y 5: solo encaja esta."}, {"type": "col", "id": "H", "slot": 0, "flip": 0, "title": "H → columna 1", "text": "La columna pide agujeros en las filas 1 y 4: solo encaja esta."}, {"type": "col", "id": "E", "slot": 3, "flip": 0, "title": "E → columna 4", "text": "La columna pide agujeros en las filas 1 y 2: solo encaja esta."}, {"type": "col", "id": "G", "slot": 1, "flip": 0, "title": "G → columna 2", "text": "La columna pide agujeros en la fila 5: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "C", "flip": 1}, {"id": "B", "flip": 1}, {"id": "D", "flip": 1}, {"id": "F", "flip": 0}, {"id": "J", "flip": 0}], "cols": [{"id": "A", "flip": 0}, {"id": "E", "flip": 0}, {"id": "I", "flip": 1}, {"id": "G", "flip": 0}, {"id": "H", "flip": 0}], "family": 12, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo B C D F J · arriba A E G H I", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "C", "slot": 0, "flip": 1, "title": "C → fila 1, girada", "text": "Agujeros en las columnas 1, 2 y 5."}, {"type": "row", "id": "F", "slot": 3, "flip": 0, "title": "F → fila 4", "text": "Agujeros en las columnas 1, 3 y 5."}, {"type": "row", "id": "J", "slot": 4, "flip": 0, "title": "J → fila 5", "text": "Agujeros en las columnas 1, 3 y 4."}, {"type": "row", "id": "D", "slot": 2, "flip": 1, "title": "D → fila 3, girada", "text": "Agujeros en las columnas 1 y 3."}, {"type": "row", "id": "B", "slot": 1, "flip": 1, "title": "B → fila 2, girada", "text": "Agujeros en la columna 2."}, {"type": "col", "id": "A", "slot": 0, "flip": 0, "title": "A → columna 1", "text": "La columna pide agujeros en las filas 1, 3, 4 y 5: solo encaja esta."}, {"type": "col", "id": "I", "slot": 2, "flip": 1, "title": "I → columna 3, girada", "text": "La columna pide agujeros en las filas 3, 4 y 5: solo encaja esta."}, {"type": "col", "id": "E", "slot": 1, "flip": 0, "title": "E → columna 2", "text": "La columna pide agujeros en las filas 1 y 2: solo encaja esta."}, {"type": "col", "id": "H", "slot": 4, "flip": 0, "title": "H → columna 5", "text": "La columna pide agujeros en las filas 1 y 4: solo encaja esta."}, {"type": "col", "id": "G", "slot": 3, "flip": 0, "title": "G → columna 4", "text": "La columna pide agujeros en la fila 5: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "J", "flip": 0}, {"id": "F", "flip": 0}, {"id": "D", "flip": 1}, {"id": "B", "flip": 1}, {"id": "C", "flip": 1}], "cols": [{"id": "A", "flip": 1}, {"id": "E", "flip": 1}, {"id": "I", "flip": 0}, {"id": "G", "flip": 1}, {"id": "H", "flip": 1}], "family": 13, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo B C D F J · arriba A E G H I", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "J", "slot": 0, "flip": 0, "title": "J → fila 1", "text": "Agujeros en las columnas 1, 3 y 4."}, {"type": "row", "id": "F", "slot": 1, "flip": 0, "title": "F → fila 2", "text": "Agujeros en las columnas 1, 3 y 5."}, {"type": "row", "id": "C", "slot": 4, "flip": 1, "title": "C → fila 5, girada", "text": "Agujeros en las columnas 1, 2 y 5."}, {"type": "row", "id": "D", "slot": 2, "flip": 1, "title": "D → fila 3, girada", "text": "Agujeros en las columnas 1 y 3."}, {"type": "row", "id": "B", "slot": 3, "flip": 1, "title": "B → fila 4, girada", "text": "Agujeros en la columna 2."}, {"type": "col", "id": "A", "slot": 0, "flip": 1, "title": "A → columna 1, girada", "text": "La columna pide agujeros en las filas 1, 2, 3 y 5: solo encaja esta."}, {"type": "col", "id": "I", "slot": 2, "flip": 0, "title": "I → columna 3", "text": "La columna pide agujeros en las filas 1, 2 y 3: solo encaja esta."}, {"type": "col", "id": "E", "slot": 1, "flip": 1, "title": "E → columna 2, girada", "text": "La columna pide agujeros en las filas 4 y 5: solo encaja esta."}, {"type": "col", "id": "H", "slot": 4, "flip": 1, "title": "H → columna 5, girada", "text": "La columna pide agujeros en las filas 2 y 5: solo encaja esta."}, {"type": "col", "id": "G", "slot": 3, "flip": 1, "title": "G → columna 4, girada", "text": "La columna pide agujeros en la fila 1: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "J", "flip": 1}, {"id": "F", "flip": 0}, {"id": "D", "flip": 0}, {"id": "B", "flip": 0}, {"id": "C", "flip": 0}], "cols": [{"id": "H", "flip": 1}, {"id": "G", "flip": 1}, {"id": "I", "flip": 0}, {"id": "E", "flip": 1}, {"id": "A", "flip": 1}], "family": 12, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo B C D F J · arriba A E G H I", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "J", "slot": 0, "flip": 1, "title": "J → fila 1, girada", "text": "Agujeros en las columnas 2, 3 y 5."}, {"type": "row", "id": "F", "slot": 1, "flip": 0, "title": "F → fila 2", "text": "Agujeros en las columnas 1, 3 y 5."}, {"type": "row", "id": "C", "slot": 4, "flip": 0, "title": "C → fila 5", "text": "Agujeros en las columnas 1, 4 y 5."}, {"type": "row", "id": "D", "slot": 2, "flip": 0, "title": "D → fila 3", "text": "Agujeros en las columnas 3 y 5."}, {"type": "row", "id": "B", "slot": 3, "flip": 0, "title": "B → fila 4", "text": "Agujeros en la columna 4."}, {"type": "col", "id": "A", "slot": 4, "flip": 1, "title": "A → columna 5, girada", "text": "La columna pide agujeros en las filas 1, 2, 3 y 5: solo encaja esta."}, {"type": "col", "id": "I", "slot": 2, "flip": 0, "title": "I → columna 3", "text": "La columna pide agujeros en las filas 1, 2 y 3: solo encaja esta."}, {"type": "col", "id": "H", "slot": 0, "flip": 1, "title": "H → columna 1, girada", "text": "La columna pide agujeros en las filas 2 y 5: solo encaja esta."}, {"type": "col", "id": "E", "slot": 3, "flip": 1, "title": "E → columna 4, girada", "text": "La columna pide agujeros en las filas 4 y 5: solo encaja esta."}, {"type": "col", "id": "G", "slot": 1, "flip": 1, "title": "G → columna 2, girada", "text": "La columna pide agujeros en la fila 1: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "E", "flip": 0}, {"id": "I", "flip": 1}, {"id": "C", "flip": 1}, {"id": "G", "flip": 1}, {"id": "F", "flip": 0}], "cols": [{"id": "A", "flip": 0}, {"id": "D", "flip": 1}, {"id": "H", "flip": 1}, {"id": "B", "flip": 1}, {"id": "J", "flip": 1}], "family": 10, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo C E F G I · arriba A B D H J", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "I", "slot": 1, "flip": 1, "title": "I → fila 2, girada", "text": "Agujeros en las columnas 3, 4 y 5."}, {"type": "row", "id": "C", "slot": 2, "flip": 1, "title": "C → fila 3, girada", "text": "Agujeros en las columnas 1, 2 y 5."}, {"type": "row", "id": "F", "slot": 4, "flip": 0, "title": "F → fila 5", "text": "Agujeros en las columnas 1, 3 y 5."}, {"type": "row", "id": "E", "slot": 0, "flip": 0, "title": "E → fila 1", "text": "Agujeros en las columnas 1 y 2."}, {"type": "row", "id": "G", "slot": 3, "flip": 1, "title": "G → fila 4, girada", "text": "Agujeros en la columna 1."}, {"type": "col", "id": "A", "slot": 0, "flip": 0, "title": "A → columna 1", "text": "La columna pide agujeros en las filas 1, 3, 4 y 5: solo encaja esta."}, {"type": "col", "id": "J", "slot": 4, "flip": 1, "title": "J → columna 5, girada", "text": "La columna pide agujeros en las filas 2, 3 y 5: solo encaja esta."}, {"type": "col", "id": "D", "slot": 1, "flip": 1, "title": "D → columna 2, girada", "text": "La columna pide agujeros en las filas 1 y 3: solo encaja esta."}, {"type": "col", "id": "H", "slot": 2, "flip": 1, "title": "H → columna 3, girada", "text": "La columna pide agujeros en las filas 2 y 5: solo encaja esta."}, {"type": "col", "id": "B", "slot": 3, "flip": 1, "title": "B → columna 4, girada", "text": "La columna pide agujeros en la fila 2: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "E", "flip": 1}, {"id": "I", "flip": 0}, {"id": "C", "flip": 0}, {"id": "G", "flip": 0}, {"id": "F", "flip": 0}], "cols": [{"id": "J", "flip": 1}, {"id": "B", "flip": 1}, {"id": "H", "flip": 1}, {"id": "D", "flip": 1}, {"id": "A", "flip": 0}], "family": 11, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo C E F G I · arriba A B D H J", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "I", "slot": 1, "flip": 0, "title": "I → fila 2", "text": "Agujeros en las columnas 1, 2 y 3."}, {"type": "row", "id": "C", "slot": 2, "flip": 0, "title": "C → fila 3", "text": "Agujeros en las columnas 1, 4 y 5."}, {"type": "row", "id": "F", "slot": 4, "flip": 0, "title": "F → fila 5", "text": "Agujeros en las columnas 1, 3 y 5."}, {"type": "row", "id": "E", "slot": 0, "flip": 1, "title": "E → fila 1, girada", "text": "Agujeros en las columnas 4 y 5."}, {"type": "row", "id": "G", "slot": 3, "flip": 0, "title": "G → fila 4", "text": "Agujeros en la columna 5."}, {"type": "col", "id": "A", "slot": 4, "flip": 0, "title": "A → columna 5", "text": "La columna pide agujeros en las filas 1, 3, 4 y 5: solo encaja esta."}, {"type": "col", "id": "J", "slot": 0, "flip": 1, "title": "J → columna 1, girada", "text": "La columna pide agujeros en las filas 2, 3 y 5: solo encaja esta."}, {"type": "col", "id": "H", "slot": 2, "flip": 1, "title": "H → columna 3, girada", "text": "La columna pide agujeros en las filas 2 y 5: solo encaja esta."}, {"type": "col", "id": "D", "slot": 3, "flip": 1, "title": "D → columna 4, girada", "text": "La columna pide agujeros en las filas 1 y 3: solo encaja esta."}, {"type": "col", "id": "B", "slot": 1, "flip": 1, "title": "B → columna 2, girada", "text": "La columna pide agujeros en la fila 2: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "F", "flip": 0}, {"id": "G", "flip": 0}, {"id": "C", "flip": 0}, {"id": "I", "flip": 0}, {"id": "E", "flip": 1}], "cols": [{"id": "J", "flip": 0}, {"id": "B", "flip": 0}, {"id": "H", "flip": 0}, {"id": "D", "flip": 0}, {"id": "A", "flip": 1}], "family": 10, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo C E F G I · arriba A B D H J", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "F", "slot": 0, "flip": 0, "title": "F → fila 1", "text": "Agujeros en las columnas 1, 3 y 5."}, {"type": "row", "id": "C", "slot": 2, "flip": 0, "title": "C → fila 3", "text": "Agujeros en las columnas 1, 4 y 5."}, {"type": "row", "id": "I", "slot": 3, "flip": 0, "title": "I → fila 4", "text": "Agujeros en las columnas 1, 2 y 3."}, {"type": "row", "id": "E", "slot": 4, "flip": 1, "title": "E → fila 5, girada", "text": "Agujeros en las columnas 4 y 5."}, {"type": "row", "id": "G", "slot": 1, "flip": 0, "title": "G → fila 2", "text": "Agujeros en la columna 5."}, {"type": "col", "id": "A", "slot": 4, "flip": 1, "title": "A → columna 5, girada", "text": "La columna pide agujeros en las filas 1, 2, 3 y 5: solo encaja esta."}, {"type": "col", "id": "J", "slot": 0, "flip": 0, "title": "J → columna 1", "text": "La columna pide agujeros en las filas 1, 3 y 4: solo encaja esta."}, {"type": "col", "id": "H", "slot": 2, "flip": 0, "title": "H → columna 3", "text": "La columna pide agujeros en las filas 1 y 4: solo encaja esta."}, {"type": "col", "id": "D", "slot": 3, "flip": 0, "title": "D → columna 4", "text": "La columna pide agujeros en las filas 3 y 5: solo encaja esta."}, {"type": "col", "id": "B", "slot": 1, "flip": 0, "title": "B → columna 2", "text": "La columna pide agujeros en la fila 4: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "F", "flip": 0}, {"id": "G", "flip": 1}, {"id": "C", "flip": 1}, {"id": "I", "flip": 1}, {"id": "E", "flip": 0}], "cols": [{"id": "A", "flip": 1}, {"id": "D", "flip": 0}, {"id": "H", "flip": 0}, {"id": "B", "flip": 0}, {"id": "J", "flip": 0}], "family": 11, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo C E F G I · arriba A B D H J", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "F", "slot": 0, "flip": 0, "title": "F → fila 1", "text": "Agujeros en las columnas 1, 3 y 5."}, {"type": "row", "id": "C", "slot": 2, "flip": 1, "title": "C → fila 3, girada", "text": "Agujeros en las columnas 1, 2 y 5."}, {"type": "row", "id": "I", "slot": 3, "flip": 1, "title": "I → fila 4, girada", "text": "Agujeros en las columnas 3, 4 y 5."}, {"type": "row", "id": "E", "slot": 4, "flip": 0, "title": "E → fila 5", "text": "Agujeros en las columnas 1 y 2."}, {"type": "row", "id": "G", "slot": 1, "flip": 1, "title": "G → fila 2, girada", "text": "Agujeros en la columna 1."}, {"type": "col", "id": "A", "slot": 0, "flip": 1, "title": "A → columna 1, girada", "text": "La columna pide agujeros en las filas 1, 2, 3 y 5: solo encaja esta."}, {"type": "col", "id": "J", "slot": 4, "flip": 0, "title": "J → columna 5", "text": "La columna pide agujeros en las filas 1, 3 y 4: solo encaja esta."}, {"type": "col", "id": "D", "slot": 1, "flip": 0, "title": "D → columna 2", "text": "La columna pide agujeros en las filas 3 y 5: solo encaja esta."}, {"type": "col", "id": "H", "slot": 2, "flip": 0, "title": "H → columna 3", "text": "La columna pide agujeros en las filas 1 y 4: solo encaja esta."}, {"type": "col", "id": "B", "slot": 3, "flip": 0, "title": "B → columna 4", "text": "La columna pide agujeros en la fila 4: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "E", "flip": 0}, {"id": "J", "flip": 0}, {"id": "C", "flip": 1}, {"id": "G", "flip": 0}, {"id": "F", "flip": 0}], "cols": [{"id": "A", "flip": 1}, {"id": "D", "flip": 1}, {"id": "H", "flip": 1}, {"id": "B", "flip": 1}, {"id": "I", "flip": 1}], "family": 9, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo C E F G J · arriba A B D H I", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "J", "slot": 1, "flip": 0, "title": "J → fila 2", "text": "Agujeros en las columnas 1, 3 y 4."}, {"type": "row", "id": "C", "slot": 2, "flip": 1, "title": "C → fila 3, girada", "text": "Agujeros en las columnas 1, 2 y 5."}, {"type": "row", "id": "F", "slot": 4, "flip": 0, "title": "F → fila 5", "text": "Agujeros en las columnas 1, 3 y 5."}, {"type": "row", "id": "E", "slot": 0, "flip": 0, "title": "E → fila 1", "text": "Agujeros en las columnas 1 y 2."}, {"type": "row", "id": "G", "slot": 3, "flip": 0, "title": "G → fila 4", "text": "Agujeros en la columna 5."}, {"type": "col", "id": "A", "slot": 0, "flip": 1, "title": "A → columna 1, girada", "text": "La columna pide agujeros en las filas 1, 2, 3 y 5: solo encaja esta."}, {"type": "col", "id": "I", "slot": 4, "flip": 1, "title": "I → columna 5, girada", "text": "La columna pide agujeros en las filas 3, 4 y 5: solo encaja esta."}, {"type": "col", "id": "D", "slot": 1, "flip": 1, "title": "D → columna 2, girada", "text": "La columna pide agujeros en las filas 1 y 3: solo encaja esta."}, {"type": "col", "id": "H", "slot": 2, "flip": 1, "title": "H → columna 3, girada", "text": "La columna pide agujeros en las filas 2 y 5: solo encaja esta."}, {"type": "col", "id": "B", "slot": 3, "flip": 1, "title": "B → columna 4, girada", "text": "La columna pide agujeros en la fila 2: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "E", "flip": 1}, {"id": "J", "flip": 1}, {"id": "C", "flip": 0}, {"id": "G", "flip": 1}, {"id": "F", "flip": 0}], "cols": [{"id": "I", "flip": 1}, {"id": "B", "flip": 1}, {"id": "H", "flip": 1}, {"id": "D", "flip": 1}, {"id": "A", "flip": 1}], "family": 8, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo C E F G J · arriba A B D H I", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "J", "slot": 1, "flip": 1, "title": "J → fila 2, girada", "text": "Agujeros en las columnas 2, 3 y 5."}, {"type": "row", "id": "C", "slot": 2, "flip": 0, "title": "C → fila 3", "text": "Agujeros en las columnas 1, 4 y 5."}, {"type": "row", "id": "F", "slot": 4, "flip": 0, "title": "F → fila 5", "text": "Agujeros en las columnas 1, 3 y 5."}, {"type": "row", "id": "E", "slot": 0, "flip": 1, "title": "E → fila 1, girada", "text": "Agujeros en las columnas 4 y 5."}, {"type": "row", "id": "G", "slot": 3, "flip": 1, "title": "G → fila 4, girada", "text": "Agujeros en la columna 1."}, {"type": "col", "id": "A", "slot": 4, "flip": 1, "title": "A → columna 5, girada", "text": "La columna pide agujeros en las filas 1, 2, 3 y 5: solo encaja esta."}, {"type": "col", "id": "I", "slot": 0, "flip": 1, "title": "I → columna 1, girada", "text": "La columna pide agujeros en las filas 3, 4 y 5: solo encaja esta."}, {"type": "col", "id": "H", "slot": 2, "flip": 1, "title": "H → columna 3, girada", "text": "La columna pide agujeros en las filas 2 y 5: solo encaja esta."}, {"type": "col", "id": "D", "slot": 3, "flip": 1, "title": "D → columna 4, girada", "text": "La columna pide agujeros en las filas 1 y 3: solo encaja esta."}, {"type": "col", "id": "B", "slot": 1, "flip": 1, "title": "B → columna 2, girada", "text": "La columna pide agujeros en la fila 2: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "F", "flip": 0}, {"id": "G", "flip": 0}, {"id": "C", "flip": 1}, {"id": "J", "flip": 0}, {"id": "E", "flip": 0}], "cols": [{"id": "A", "flip": 0}, {"id": "D", "flip": 0}, {"id": "H", "flip": 0}, {"id": "B", "flip": 0}, {"id": "I", "flip": 0}], "family": 8, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo C E F G J · arriba A B D H I", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "F", "slot": 0, "flip": 0, "title": "F → fila 1", "text": "Agujeros en las columnas 1, 3 y 5."}, {"type": "row", "id": "C", "slot": 2, "flip": 1, "title": "C → fila 3, girada", "text": "Agujeros en las columnas 1, 2 y 5."}, {"type": "row", "id": "J", "slot": 3, "flip": 0, "title": "J → fila 4", "text": "Agujeros en las columnas 1, 3 y 4."}, {"type": "row", "id": "E", "slot": 4, "flip": 0, "title": "E → fila 5", "text": "Agujeros en las columnas 1 y 2."}, {"type": "row", "id": "G", "slot": 1, "flip": 0, "title": "G → fila 2", "text": "Agujeros en la columna 5."}, {"type": "col", "id": "A", "slot": 0, "flip": 0, "title": "A → columna 1", "text": "La columna pide agujeros en las filas 1, 3, 4 y 5: solo encaja esta."}, {"type": "col", "id": "I", "slot": 4, "flip": 0, "title": "I → columna 5", "text": "La columna pide agujeros en las filas 1, 2 y 3: solo encaja esta."}, {"type": "col", "id": "D", "slot": 1, "flip": 0, "title": "D → columna 2", "text": "La columna pide agujeros en las filas 3 y 5: solo encaja esta."}, {"type": "col", "id": "H", "slot": 2, "flip": 0, "title": "H → columna 3", "text": "La columna pide agujeros en las filas 1 y 4: solo encaja esta."}, {"type": "col", "id": "B", "slot": 3, "flip": 0, "title": "B → columna 4", "text": "La columna pide agujeros en la fila 4: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "F", "flip": 0}, {"id": "G", "flip": 1}, {"id": "C", "flip": 0}, {"id": "J", "flip": 1}, {"id": "E", "flip": 1}], "cols": [{"id": "I", "flip": 0}, {"id": "B", "flip": 0}, {"id": "H", "flip": 0}, {"id": "D", "flip": 0}, {"id": "A", "flip": 0}], "family": 9, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo C E F G J · arriba A B D H I", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "F", "slot": 0, "flip": 0, "title": "F → fila 1", "text": "Agujeros en las columnas 1, 3 y 5."}, {"type": "row", "id": "C", "slot": 2, "flip": 0, "title": "C → fila 3", "text": "Agujeros en las columnas 1, 4 y 5."}, {"type": "row", "id": "J", "slot": 3, "flip": 1, "title": "J → fila 4, girada", "text": "Agujeros en las columnas 2, 3 y 5."}, {"type": "row", "id": "E", "slot": 4, "flip": 1, "title": "E → fila 5, girada", "text": "Agujeros en las columnas 4 y 5."}, {"type": "row", "id": "G", "slot": 1, "flip": 1, "title": "G → fila 2, girada", "text": "Agujeros en la columna 1."}, {"type": "col", "id": "A", "slot": 4, "flip": 0, "title": "A → columna 5", "text": "La columna pide agujeros en las filas 1, 3, 4 y 5: solo encaja esta."}, {"type": "col", "id": "I", "slot": 0, "flip": 0, "title": "I → columna 1", "text": "La columna pide agujeros en las filas 1, 2 y 3: solo encaja esta."}, {"type": "col", "id": "H", "slot": 2, "flip": 0, "title": "H → columna 3", "text": "La columna pide agujeros en las filas 1 y 4: solo encaja esta."}, {"type": "col", "id": "D", "slot": 3, "flip": 0, "title": "D → columna 4", "text": "La columna pide agujeros en las filas 3 y 5: solo encaja esta."}, {"type": "col", "id": "B", "slot": 1, "flip": 0, "title": "B → columna 2", "text": "La columna pide agujeros en la fila 4: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "F", "flip": 0}, {"id": "I", "flip": 0}, {"id": "C", "flip": 0}, {"id": "G", "flip": 0}, {"id": "H", "flip": 0}], "cols": [{"id": "A", "flip": 1}, {"id": "B", "flip": 1}, {"id": "E", "flip": 0}, {"id": "D", "flip": 0}, {"id": "J", "flip": 0}], "family": 7, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo C F G H I · arriba A B D E J", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "F", "slot": 0, "flip": 0, "title": "F → fila 1", "text": "Agujeros en las columnas 1, 3 y 5."}, {"type": "row", "id": "I", "slot": 1, "flip": 0, "title": "I → fila 2", "text": "Agujeros en las columnas 1, 2 y 3."}, {"type": "row", "id": "C", "slot": 2, "flip": 0, "title": "C → fila 3", "text": "Agujeros en las columnas 1, 4 y 5."}, {"type": "row", "id": "H", "slot": 4, "flip": 0, "title": "H → fila 5", "text": "Agujeros en las columnas 1 y 4."}, {"type": "row", "id": "G", "slot": 3, "flip": 0, "title": "G → fila 4", "text": "Agujeros en la columna 5."}, {"type": "col", "id": "A", "slot": 0, "flip": 1, "title": "A → columna 1, girada", "text": "La columna pide agujeros en las filas 1, 2, 3 y 5: solo encaja esta."}, {"type": "col", "id": "J", "slot": 4, "flip": 0, "title": "J → columna 5", "text": "La columna pide agujeros en las filas 1, 3 y 4: solo encaja esta."}, {"type": "col", "id": "E", "slot": 2, "flip": 0, "title": "E → columna 3", "text": "La columna pide agujeros en las filas 1 y 2: solo encaja esta."}, {"type": "col", "id": "D", "slot": 3, "flip": 0, "title": "D → columna 4", "text": "La columna pide agujeros en las filas 3 y 5: solo encaja esta."}, {"type": "col", "id": "B", "slot": 1, "flip": 1, "title": "B → columna 2, girada", "text": "La columna pide agujeros en la fila 2: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "F", "flip": 0}, {"id": "I", "flip": 1}, {"id": "C", "flip": 1}, {"id": "G", "flip": 1}, {"id": "H", "flip": 1}], "cols": [{"id": "J", "flip": 0}, {"id": "D", "flip": 0}, {"id": "E", "flip": 0}, {"id": "B", "flip": 1}, {"id": "A", "flip": 1}], "family": 6, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo C F G H I · arriba A B D E J", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "F", "slot": 0, "flip": 0, "title": "F → fila 1", "text": "Agujeros en las columnas 1, 3 y 5."}, {"type": "row", "id": "I", "slot": 1, "flip": 1, "title": "I → fila 2, girada", "text": "Agujeros en las columnas 3, 4 y 5."}, {"type": "row", "id": "C", "slot": 2, "flip": 1, "title": "C → fila 3, girada", "text": "Agujeros en las columnas 1, 2 y 5."}, {"type": "row", "id": "H", "slot": 4, "flip": 1, "title": "H → fila 5, girada", "text": "Agujeros en las columnas 2 y 5."}, {"type": "row", "id": "G", "slot": 3, "flip": 1, "title": "G → fila 4, girada", "text": "Agujeros en la columna 1."}, {"type": "col", "id": "A", "slot": 4, "flip": 1, "title": "A → columna 5, girada", "text": "La columna pide agujeros en las filas 1, 2, 3 y 5: solo encaja esta."}, {"type": "col", "id": "J", "slot": 0, "flip": 0, "title": "J → columna 1", "text": "La columna pide agujeros en las filas 1, 3 y 4: solo encaja esta."}, {"type": "col", "id": "D", "slot": 1, "flip": 0, "title": "D → columna 2", "text": "La columna pide agujeros en las filas 3 y 5: solo encaja esta."}, {"type": "col", "id": "E", "slot": 2, "flip": 0, "title": "E → columna 3", "text": "La columna pide agujeros en las filas 1 y 2: solo encaja esta."}, {"type": "col", "id": "B", "slot": 3, "flip": 1, "title": "B → columna 4, girada", "text": "La columna pide agujeros en la fila 2: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "H", "flip": 0}, {"id": "G", "flip": 0}, {"id": "C", "flip": 0}, {"id": "I", "flip": 0}, {"id": "F", "flip": 0}], "cols": [{"id": "A", "flip": 0}, {"id": "B", "flip": 0}, {"id": "E", "flip": 1}, {"id": "D", "flip": 1}, {"id": "J", "flip": 1}], "family": 6, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo C F G H I · arriba A B D E J", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "C", "slot": 2, "flip": 0, "title": "C → fila 3", "text": "Agujeros en las columnas 1, 4 y 5."}, {"type": "row", "id": "I", "slot": 3, "flip": 0, "title": "I → fila 4", "text": "Agujeros en las columnas 1, 2 y 3."}, {"type": "row", "id": "F", "slot": 4, "flip": 0, "title": "F → fila 5", "text": "Agujeros en las columnas 1, 3 y 5."}, {"type": "row", "id": "H", "slot": 0, "flip": 0, "title": "H → fila 1", "text": "Agujeros en las columnas 1 y 4."}, {"type": "row", "id": "G", "slot": 1, "flip": 0, "title": "G → fila 2", "text": "Agujeros en la columna 5."}, {"type": "col", "id": "A", "slot": 0, "flip": 0, "title": "A → columna 1", "text": "La columna pide agujeros en las filas 1, 3, 4 y 5: solo encaja esta."}, {"type": "col", "id": "J", "slot": 4, "flip": 1, "title": "J → columna 5, girada", "text": "La columna pide agujeros en las filas 2, 3 y 5: solo encaja esta."}, {"type": "col", "id": "E", "slot": 2, "flip": 1, "title": "E → columna 3, girada", "text": "La columna pide agujeros en las filas 4 y 5: solo encaja esta."}, {"type": "col", "id": "D", "slot": 3, "flip": 1, "title": "D → columna 4, girada", "text": "La columna pide agujeros en las filas 1 y 3: solo encaja esta."}, {"type": "col", "id": "B", "slot": 1, "flip": 0, "title": "B → columna 2", "text": "La columna pide agujeros en la fila 4: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "H", "flip": 1}, {"id": "G", "flip": 1}, {"id": "C", "flip": 1}, {"id": "I", "flip": 1}, {"id": "F", "flip": 0}], "cols": [{"id": "J", "flip": 1}, {"id": "D", "flip": 1}, {"id": "E", "flip": 1}, {"id": "B", "flip": 0}, {"id": "A", "flip": 0}], "family": 7, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo C F G H I · arriba A B D E J", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "C", "slot": 2, "flip": 1, "title": "C → fila 3, girada", "text": "Agujeros en las columnas 1, 2 y 5."}, {"type": "row", "id": "I", "slot": 3, "flip": 1, "title": "I → fila 4, girada", "text": "Agujeros en las columnas 3, 4 y 5."}, {"type": "row", "id": "F", "slot": 4, "flip": 0, "title": "F → fila 5", "text": "Agujeros en las columnas 1, 3 y 5."}, {"type": "row", "id": "H", "slot": 0, "flip": 1, "title": "H → fila 1, girada", "text": "Agujeros en las columnas 2 y 5."}, {"type": "row", "id": "G", "slot": 1, "flip": 1, "title": "G → fila 2, girada", "text": "Agujeros en la columna 1."}, {"type": "col", "id": "A", "slot": 4, "flip": 0, "title": "A → columna 5", "text": "La columna pide agujeros en las filas 1, 3, 4 y 5: solo encaja esta."}, {"type": "col", "id": "J", "slot": 0, "flip": 1, "title": "J → columna 1, girada", "text": "La columna pide agujeros en las filas 2, 3 y 5: solo encaja esta."}, {"type": "col", "id": "D", "slot": 1, "flip": 1, "title": "D → columna 2, girada", "text": "La columna pide agujeros en las filas 1 y 3: solo encaja esta."}, {"type": "col", "id": "E", "slot": 2, "flip": 1, "title": "E → columna 3, girada", "text": "La columna pide agujeros en las filas 4 y 5: solo encaja esta."}, {"type": "col", "id": "B", "slot": 3, "flip": 0, "title": "B → columna 4", "text": "La columna pide agujeros en la fila 4: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "F", "flip": 0}, {"id": "J", "flip": 0}, {"id": "C", "flip": 1}, {"id": "G", "flip": 0}, {"id": "H", "flip": 1}], "cols": [{"id": "I", "flip": 0}, {"id": "D", "flip": 0}, {"id": "E", "flip": 0}, {"id": "B", "flip": 1}, {"id": "A", "flip": 0}], "family": 5, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo C F G H J · arriba A B D E I", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "F", "slot": 0, "flip": 0, "title": "F → fila 1", "text": "Agujeros en las columnas 1, 3 y 5."}, {"type": "row", "id": "J", "slot": 1, "flip": 0, "title": "J → fila 2", "text": "Agujeros en las columnas 1, 3 y 4."}, {"type": "row", "id": "C", "slot": 2, "flip": 1, "title": "C → fila 3, girada", "text": "Agujeros en las columnas 1, 2 y 5."}, {"type": "row", "id": "H", "slot": 4, "flip": 1, "title": "H → fila 5, girada", "text": "Agujeros en las columnas 2 y 5."}, {"type": "row", "id": "G", "slot": 3, "flip": 0, "title": "G → fila 4", "text": "Agujeros en la columna 5."}, {"type": "col", "id": "A", "slot": 4, "flip": 0, "title": "A → columna 5", "text": "La columna pide agujeros en las filas 1, 3, 4 y 5: solo encaja esta."}, {"type": "col", "id": "I", "slot": 0, "flip": 0, "title": "I → columna 1", "text": "La columna pide agujeros en las filas 1, 2 y 3: solo encaja esta."}, {"type": "col", "id": "D", "slot": 1, "flip": 0, "title": "D → columna 2", "text": "La columna pide agujeros en las filas 3 y 5: solo encaja esta."}, {"type": "col", "id": "E", "slot": 2, "flip": 0, "title": "E → columna 3", "text": "La columna pide agujeros en las filas 1 y 2: solo encaja esta."}, {"type": "col", "id": "B", "slot": 3, "flip": 1, "title": "B → columna 4, girada", "text": "La columna pide agujeros en la fila 2: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "F", "flip": 0}, {"id": "J", "flip": 1}, {"id": "C", "flip": 0}, {"id": "G", "flip": 1}, {"id": "H", "flip": 0}], "cols": [{"id": "A", "flip": 0}, {"id": "B", "flip": 1}, {"id": "E", "flip": 0}, {"id": "D", "flip": 0}, {"id": "I", "flip": 0}], "family": 4, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo C F G H J · arriba A B D E I", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "F", "slot": 0, "flip": 0, "title": "F → fila 1", "text": "Agujeros en las columnas 1, 3 y 5."}, {"type": "row", "id": "J", "slot": 1, "flip": 1, "title": "J → fila 2, girada", "text": "Agujeros en las columnas 2, 3 y 5."}, {"type": "row", "id": "C", "slot": 2, "flip": 0, "title": "C → fila 3", "text": "Agujeros en las columnas 1, 4 y 5."}, {"type": "row", "id": "H", "slot": 4, "flip": 0, "title": "H → fila 5", "text": "Agujeros en las columnas 1 y 4."}, {"type": "row", "id": "G", "slot": 3, "flip": 1, "title": "G → fila 4, girada", "text": "Agujeros en la columna 1."}, {"type": "col", "id": "A", "slot": 0, "flip": 0, "title": "A → columna 1", "text": "La columna pide agujeros en las filas 1, 3, 4 y 5: solo encaja esta."}, {"type": "col", "id": "I", "slot": 4, "flip": 0, "title": "I → columna 5", "text": "La columna pide agujeros en las filas 1, 2 y 3: solo encaja esta."}, {"type": "col", "id": "E", "slot": 2, "flip": 0, "title": "E → columna 3", "text": "La columna pide agujeros en las filas 1 y 2: solo encaja esta."}, {"type": "col", "id": "D", "slot": 3, "flip": 0, "title": "D → columna 4", "text": "La columna pide agujeros en las filas 3 y 5: solo encaja esta."}, {"type": "col", "id": "B", "slot": 1, "flip": 1, "title": "B → columna 2, girada", "text": "La columna pide agujeros en la fila 2: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "H", "flip": 0}, {"id": "G", "flip": 1}, {"id": "C", "flip": 0}, {"id": "J", "flip": 1}, {"id": "F", "flip": 0}], "cols": [{"id": "A", "flip": 1}, {"id": "B", "flip": 0}, {"id": "E", "flip": 1}, {"id": "D", "flip": 1}, {"id": "I", "flip": 1}], "family": 5, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo C F G H J · arriba A B D E I", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "C", "slot": 2, "flip": 0, "title": "C → fila 3", "text": "Agujeros en las columnas 1, 4 y 5."}, {"type": "row", "id": "J", "slot": 3, "flip": 1, "title": "J → fila 4, girada", "text": "Agujeros en las columnas 2, 3 y 5."}, {"type": "row", "id": "F", "slot": 4, "flip": 0, "title": "F → fila 5", "text": "Agujeros en las columnas 1, 3 y 5."}, {"type": "row", "id": "H", "slot": 0, "flip": 0, "title": "H → fila 1", "text": "Agujeros en las columnas 1 y 4."}, {"type": "row", "id": "G", "slot": 1, "flip": 1, "title": "G → fila 2, girada", "text": "Agujeros en la columna 1."}, {"type": "col", "id": "A", "slot": 0, "flip": 1, "title": "A → columna 1, girada", "text": "La columna pide agujeros en las filas 1, 2, 3 y 5: solo encaja esta."}, {"type": "col", "id": "I", "slot": 4, "flip": 1, "title": "I → columna 5, girada", "text": "La columna pide agujeros en las filas 3, 4 y 5: solo encaja esta."}, {"type": "col", "id": "E", "slot": 2, "flip": 1, "title": "E → columna 3, girada", "text": "La columna pide agujeros en las filas 4 y 5: solo encaja esta."}, {"type": "col", "id": "D", "slot": 3, "flip": 1, "title": "D → columna 4, girada", "text": "La columna pide agujeros en las filas 1 y 3: solo encaja esta."}, {"type": "col", "id": "B", "slot": 1, "flip": 0, "title": "B → columna 2", "text": "La columna pide agujeros en la fila 4: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "H", "flip": 1}, {"id": "G", "flip": 0}, {"id": "C", "flip": 1}, {"id": "J", "flip": 0}, {"id": "F", "flip": 0}], "cols": [{"id": "I", "flip": 1}, {"id": "D", "flip": 1}, {"id": "E", "flip": 1}, {"id": "B", "flip": 0}, {"id": "A", "flip": 1}], "family": 4, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo C F G H J · arriba A B D E I", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "C", "slot": 2, "flip": 1, "title": "C → fila 3, girada", "text": "Agujeros en las columnas 1, 2 y 5."}, {"type": "row", "id": "J", "slot": 3, "flip": 0, "title": "J → fila 4", "text": "Agujeros en las columnas 1, 3 y 4."}, {"type": "row", "id": "F", "slot": 4, "flip": 0, "title": "F → fila 5", "text": "Agujeros en las columnas 1, 3 y 5."}, {"type": "row", "id": "H", "slot": 0, "flip": 1, "title": "H → fila 1, girada", "text": "Agujeros en las columnas 2 y 5."}, {"type": "row", "id": "G", "slot": 1, "flip": 0, "title": "G → fila 2", "text": "Agujeros en la columna 5."}, {"type": "col", "id": "A", "slot": 4, "flip": 1, "title": "A → columna 5, girada", "text": "La columna pide agujeros en las filas 1, 2, 3 y 5: solo encaja esta."}, {"type": "col", "id": "I", "slot": 0, "flip": 1, "title": "I → columna 1, girada", "text": "La columna pide agujeros en las filas 3, 4 y 5: solo encaja esta."}, {"type": "col", "id": "D", "slot": 1, "flip": 1, "title": "D → columna 2, girada", "text": "La columna pide agujeros en las filas 1 y 3: solo encaja esta."}, {"type": "col", "id": "E", "slot": 2, "flip": 1, "title": "E → columna 3, girada", "text": "La columna pide agujeros en las filas 4 y 5: solo encaja esta."}, {"type": "col", "id": "B", "slot": 3, "flip": 0, "title": "B → columna 4", "text": "La columna pide agujeros en la fila 4: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "F", "flip": 0}, {"id": "J", "flip": 0}, {"id": "E", "flip": 0}, {"id": "G", "flip": 0}, {"id": "I", "flip": 0}], "cols": [{"id": "A", "flip": 1}, {"id": "D", "flip": 0}, {"id": "C", "flip": 1}, {"id": "B", "flip": 1}, {"id": "H", "flip": 0}], "family": 3, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo E F G I J · arriba A B C D H", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "F", "slot": 0, "flip": 0, "title": "F → fila 1", "text": "Agujeros en las columnas 1, 3 y 5."}, {"type": "row", "id": "J", "slot": 1, "flip": 0, "title": "J → fila 2", "text": "Agujeros en las columnas 1, 3 y 4."}, {"type": "row", "id": "I", "slot": 4, "flip": 0, "title": "I → fila 5", "text": "Agujeros en las columnas 1, 2 y 3."}, {"type": "row", "id": "E", "slot": 2, "flip": 0, "title": "E → fila 3", "text": "Agujeros en las columnas 1 y 2."}, {"type": "row", "id": "G", "slot": 3, "flip": 0, "title": "G → fila 4", "text": "Agujeros en la columna 5."}, {"type": "col", "id": "A", "slot": 0, "flip": 1, "title": "A → columna 1, girada", "text": "La columna pide agujeros en las filas 1, 2, 3 y 5: solo encaja esta."}, {"type": "col", "id": "C", "slot": 2, "flip": 1, "title": "C → columna 3, girada", "text": "La columna pide agujeros en las filas 1, 2 y 5: solo encaja esta."}, {"type": "col", "id": "D", "slot": 1, "flip": 0, "title": "D → columna 2", "text": "La columna pide agujeros en las filas 3 y 5: solo encaja esta."}, {"type": "col", "id": "H", "slot": 4, "flip": 0, "title": "H → columna 5", "text": "La columna pide agujeros en las filas 1 y 4: solo encaja esta."}, {"type": "col", "id": "B", "slot": 3, "flip": 1, "title": "B → columna 4, girada", "text": "La columna pide agujeros en la fila 2: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "F", "flip": 0}, {"id": "J", "flip": 1}, {"id": "E", "flip": 1}, {"id": "G", "flip": 1}, {"id": "I", "flip": 1}], "cols": [{"id": "H", "flip": 0}, {"id": "B", "flip": 1}, {"id": "C", "flip": 1}, {"id": "D", "flip": 0}, {"id": "A", "flip": 1}], "family": 2, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo E F G I J · arriba A B C D H", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "F", "slot": 0, "flip": 0, "title": "F → fila 1", "text": "Agujeros en las columnas 1, 3 y 5."}, {"type": "row", "id": "J", "slot": 1, "flip": 1, "title": "J → fila 2, girada", "text": "Agujeros en las columnas 2, 3 y 5."}, {"type": "row", "id": "I", "slot": 4, "flip": 1, "title": "I → fila 5, girada", "text": "Agujeros en las columnas 3, 4 y 5."}, {"type": "row", "id": "E", "slot": 2, "flip": 1, "title": "E → fila 3, girada", "text": "Agujeros en las columnas 4 y 5."}, {"type": "row", "id": "G", "slot": 3, "flip": 1, "title": "G → fila 4, girada", "text": "Agujeros en la columna 1."}, {"type": "col", "id": "A", "slot": 4, "flip": 1, "title": "A → columna 5, girada", "text": "La columna pide agujeros en las filas 1, 2, 3 y 5: solo encaja esta."}, {"type": "col", "id": "C", "slot": 2, "flip": 1, "title": "C → columna 3, girada", "text": "La columna pide agujeros en las filas 1, 2 y 5: solo encaja esta."}, {"type": "col", "id": "H", "slot": 0, "flip": 0, "title": "H → columna 1", "text": "La columna pide agujeros en las filas 1 y 4: solo encaja esta."}, {"type": "col", "id": "D", "slot": 3, "flip": 0, "title": "D → columna 4", "text": "La columna pide agujeros en las filas 3 y 5: solo encaja esta."}, {"type": "col", "id": "B", "slot": 1, "flip": 1, "title": "B → columna 2, girada", "text": "La columna pide agujeros en la fila 2: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "I", "flip": 0}, {"id": "G", "flip": 0}, {"id": "E", "flip": 0}, {"id": "J", "flip": 0}, {"id": "F", "flip": 0}], "cols": [{"id": "A", "flip": 0}, {"id": "D", "flip": 1}, {"id": "C", "flip": 0}, {"id": "B", "flip": 0}, {"id": "H", "flip": 1}], "family": 2, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo E F G I J · arriba A B C D H", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "I", "slot": 0, "flip": 0, "title": "I → fila 1", "text": "Agujeros en las columnas 1, 2 y 3."}, {"type": "row", "id": "J", "slot": 3, "flip": 0, "title": "J → fila 4", "text": "Agujeros en las columnas 1, 3 y 4."}, {"type": "row", "id": "F", "slot": 4, "flip": 0, "title": "F → fila 5", "text": "Agujeros en las columnas 1, 3 y 5."}, {"type": "row", "id": "E", "slot": 2, "flip": 0, "title": "E → fila 3", "text": "Agujeros en las columnas 1 y 2."}, {"type": "row", "id": "G", "slot": 1, "flip": 0, "title": "G → fila 2", "text": "Agujeros en la columna 5."}, {"type": "col", "id": "A", "slot": 0, "flip": 0, "title": "A → columna 1", "text": "La columna pide agujeros en las filas 1, 3, 4 y 5: solo encaja esta."}, {"type": "col", "id": "C", "slot": 2, "flip": 0, "title": "C → columna 3", "text": "La columna pide agujeros en las filas 1, 4 y 5: solo encaja esta."}, {"type": "col", "id": "D", "slot": 1, "flip": 1, "title": "D → columna 2, girada", "text": "La columna pide agujeros en las filas 1 y 3: solo encaja esta."}, {"type": "col", "id": "H", "slot": 4, "flip": 1, "title": "H → columna 5, girada", "text": "La columna pide agujeros en las filas 2 y 5: solo encaja esta."}, {"type": "col", "id": "B", "slot": 3, "flip": 0, "title": "B → columna 4", "text": "La columna pide agujeros en la fila 4: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "I", "flip": 1}, {"id": "G", "flip": 1}, {"id": "E", "flip": 1}, {"id": "J", "flip": 1}, {"id": "F", "flip": 0}], "cols": [{"id": "H", "flip": 1}, {"id": "B", "flip": 0}, {"id": "C", "flip": 0}, {"id": "D", "flip": 1}, {"id": "A", "flip": 0}], "family": 3, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo E F G I J · arriba A B C D H", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "I", "slot": 0, "flip": 1, "title": "I → fila 1, girada", "text": "Agujeros en las columnas 3, 4 y 5."}, {"type": "row", "id": "J", "slot": 3, "flip": 1, "title": "J → fila 4, girada", "text": "Agujeros en las columnas 2, 3 y 5."}, {"type": "row", "id": "F", "slot": 4, "flip": 0, "title": "F → fila 5", "text": "Agujeros en las columnas 1, 3 y 5."}, {"type": "row", "id": "E", "slot": 2, "flip": 1, "title": "E → fila 3, girada", "text": "Agujeros en las columnas 4 y 5."}, {"type": "row", "id": "G", "slot": 1, "flip": 1, "title": "G → fila 2, girada", "text": "Agujeros en la columna 1."}, {"type": "col", "id": "A", "slot": 4, "flip": 0, "title": "A → columna 5", "text": "La columna pide agujeros en las filas 1, 3, 4 y 5: solo encaja esta."}, {"type": "col", "id": "C", "slot": 2, "flip": 0, "title": "C → columna 3", "text": "La columna pide agujeros en las filas 1, 4 y 5: solo encaja esta."}, {"type": "col", "id": "H", "slot": 0, "flip": 1, "title": "H → columna 1, girada", "text": "La columna pide agujeros en las filas 2 y 5: solo encaja esta."}, {"type": "col", "id": "D", "slot": 3, "flip": 1, "title": "D → columna 4, girada", "text": "La columna pide agujeros en las filas 1 y 3: solo encaja esta."}, {"type": "col", "id": "B", "slot": 1, "flip": 0, "title": "B → columna 2", "text": "La columna pide agujeros en la fila 4: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "F", "flip": 0}, {"id": "G", "flip": 0}, {"id": "H", "flip": 0}, {"id": "I", "flip": 0}, {"id": "J", "flip": 0}], "cols": [{"id": "A", "flip": 0}, {"id": "B", "flip": 0}, {"id": "C", "flip": 0}, {"id": "D", "flip": 0}, {"id": "E", "flip": 0}], "family": 0, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo F G H I J · arriba A B C D E", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "F", "slot": 0, "flip": 0, "title": "F → fila 1", "text": "Agujeros en las columnas 1, 3 y 5."}, {"type": "row", "id": "I", "slot": 3, "flip": 0, "title": "I → fila 4", "text": "Agujeros en las columnas 1, 2 y 3."}, {"type": "row", "id": "J", "slot": 4, "flip": 0, "title": "J → fila 5", "text": "Agujeros en las columnas 1, 3 y 4."}, {"type": "row", "id": "H", "slot": 2, "flip": 0, "title": "H → fila 3", "text": "Agujeros en las columnas 1 y 4."}, {"type": "row", "id": "G", "slot": 1, "flip": 0, "title": "G → fila 2", "text": "Agujeros en la columna 5."}, {"type": "col", "id": "A", "slot": 0, "flip": 0, "title": "A → columna 1", "text": "La columna pide agujeros en las filas 1, 3, 4 y 5: solo encaja esta."}, {"type": "col", "id": "C", "slot": 2, "flip": 0, "title": "C → columna 3", "text": "La columna pide agujeros en las filas 1, 4 y 5: solo encaja esta."}, {"type": "col", "id": "D", "slot": 3, "flip": 0, "title": "D → columna 4", "text": "La columna pide agujeros en las filas 3 y 5: solo encaja esta."}, {"type": "col", "id": "E", "slot": 4, "flip": 0, "title": "E → columna 5", "text": "La columna pide agujeros en las filas 1 y 2: solo encaja esta."}, {"type": "col", "id": "B", "slot": 1, "flip": 0, "title": "B → columna 2", "text": "La columna pide agujeros en la fila 4: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "F", "flip": 0}, {"id": "G", "flip": 1}, {"id": "H", "flip": 1}, {"id": "I", "flip": 1}, {"id": "J", "flip": 1}], "cols": [{"id": "E", "flip": 0}, {"id": "D", "flip": 0}, {"id": "C", "flip": 0}, {"id": "B", "flip": 0}, {"id": "A", "flip": 0}], "family": 1, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo F G H I J · arriba A B C D E", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "F", "slot": 0, "flip": 0, "title": "F → fila 1", "text": "Agujeros en las columnas 1, 3 y 5."}, {"type": "row", "id": "I", "slot": 3, "flip": 1, "title": "I → fila 4, girada", "text": "Agujeros en las columnas 3, 4 y 5."}, {"type": "row", "id": "J", "slot": 4, "flip": 1, "title": "J → fila 5, girada", "text": "Agujeros en las columnas 2, 3 y 5."}, {"type": "row", "id": "H", "slot": 2, "flip": 1, "title": "H → fila 3, girada", "text": "Agujeros en las columnas 2 y 5."}, {"type": "row", "id": "G", "slot": 1, "flip": 1, "title": "G → fila 2, girada", "text": "Agujeros en la columna 1."}, {"type": "col", "id": "A", "slot": 4, "flip": 0, "title": "A → columna 5", "text": "La columna pide agujeros en las filas 1, 3, 4 y 5: solo encaja esta."}, {"type": "col", "id": "C", "slot": 2, "flip": 0, "title": "C → columna 3", "text": "La columna pide agujeros en las filas 1, 4 y 5: solo encaja esta."}, {"type": "col", "id": "E", "slot": 0, "flip": 0, "title": "E → columna 1", "text": "La columna pide agujeros en las filas 1 y 2: solo encaja esta."}, {"type": "col", "id": "D", "slot": 1, "flip": 0, "title": "D → columna 2", "text": "La columna pide agujeros en las filas 3 y 5: solo encaja esta."}, {"type": "col", "id": "B", "slot": 3, "flip": 0, "title": "B → columna 4", "text": "La columna pide agujeros en la fila 4: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "J", "flip": 0}, {"id": "I", "flip": 0}, {"id": "H", "flip": 0}, {"id": "G", "flip": 0}, {"id": "F", "flip": 0}], "cols": [{"id": "A", "flip": 1}, {"id": "B", "flip": 1}, {"id": "C", "flip": 1}, {"id": "D", "flip": 1}, {"id": "E", "flip": 1}], "family": 1, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo F G H I J · arriba A B C D E", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "J", "slot": 0, "flip": 0, "title": "J → fila 1", "text": "Agujeros en las columnas 1, 3 y 4."}, {"type": "row", "id": "I", "slot": 1, "flip": 0, "title": "I → fila 2", "text": "Agujeros en las columnas 1, 2 y 3."}, {"type": "row", "id": "F", "slot": 4, "flip": 0, "title": "F → fila 5", "text": "Agujeros en las columnas 1, 3 y 5."}, {"type": "row", "id": "H", "slot": 2, "flip": 0, "title": "H → fila 3", "text": "Agujeros en las columnas 1 y 4."}, {"type": "row", "id": "G", "slot": 3, "flip": 0, "title": "G → fila 4", "text": "Agujeros en la columna 5."}, {"type": "col", "id": "A", "slot": 0, "flip": 1, "title": "A → columna 1, girada", "text": "La columna pide agujeros en las filas 1, 2, 3 y 5: solo encaja esta."}, {"type": "col", "id": "C", "slot": 2, "flip": 1, "title": "C → columna 3, girada", "text": "La columna pide agujeros en las filas 1, 2 y 5: solo encaja esta."}, {"type": "col", "id": "D", "slot": 3, "flip": 1, "title": "D → columna 4, girada", "text": "La columna pide agujeros en las filas 1 y 3: solo encaja esta."}, {"type": "col", "id": "E", "slot": 4, "flip": 1, "title": "E → columna 5, girada", "text": "La columna pide agujeros en las filas 4 y 5: solo encaja esta."}, {"type": "col", "id": "B", "slot": 1, "flip": 1, "title": "B → columna 2, girada", "text": "La columna pide agujeros en la fila 2: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}, {"rows": [{"id": "J", "flip": 1}, {"id": "I", "flip": 1}, {"id": "H", "flip": 1}, {"id": "G", "flip": 1}, {"id": "F", "flip": 0}], "cols": [{"id": "E", "flip": 1}, {"id": "D", "flip": 1}, {"id": "C", "flip": 1}, {"id": "B", "flip": 1}, {"id": "A", "flip": 1}], "family": 0, "steps": [{"type": "plan", "id": null, "slot": null, "flip": 0, "title": "Abajo F G H I J · arriba A B C D E", "text": "Cada capa suma 12 agujeros."}, {"type": "row", "id": "J", "slot": 0, "flip": 1, "title": "J → fila 1, girada", "text": "Agujeros en las columnas 2, 3 y 5."}, {"type": "row", "id": "I", "slot": 1, "flip": 1, "title": "I → fila 2, girada", "text": "Agujeros en las columnas 3, 4 y 5."}, {"type": "row", "id": "F", "slot": 4, "flip": 0, "title": "F → fila 5", "text": "Agujeros en las columnas 1, 3 y 5."}, {"type": "row", "id": "H", "slot": 2, "flip": 1, "title": "H → fila 3, girada", "text": "Agujeros en las columnas 2 y 5."}, {"type": "row", "id": "G", "slot": 3, "flip": 1, "title": "G → fila 4, girada", "text": "Agujeros en la columna 1."}, {"type": "col", "id": "A", "slot": 4, "flip": 1, "title": "A → columna 5, girada", "text": "La columna pide agujeros en las filas 1, 2, 3 y 5: solo encaja esta."}, {"type": "col", "id": "C", "slot": 2, "flip": 1, "title": "C → columna 3, girada", "text": "La columna pide agujeros en las filas 1, 2 y 5: solo encaja esta."}, {"type": "col", "id": "E", "slot": 0, "flip": 1, "title": "E → columna 1, girada", "text": "La columna pide agujeros en las filas 4 y 5: solo encaja esta."}, {"type": "col", "id": "D", "slot": 1, "flip": 1, "title": "D → columna 2, girada", "text": "La columna pide agujeros en las filas 1 y 3: solo encaja esta."}, {"type": "col", "id": "B", "slot": 3, "flip": 1, "title": "B → columna 4, girada", "text": "La columna pide agujeros en la fila 2: solo encaja esta."}, {"type": "pegs", "id": null, "slot": null, "flip": 0, "title": "Mete las 12 clavijas", "text": ""}]}], "families": [[0, 3, 60, 63], [1, 2, 62, 61], [4, 6, 58, 57], [5, 7, 56, 59], [8, 11, 53, 55], [9, 10, 54, 52], [12, 14, 50, 49], [13, 15, 48, 51], [16, 19, 46, 45], [17, 18, 44, 47], [20, 22, 40, 42], [21, 23, 43, 41], [24, 27, 37, 39], [25, 26, 38, 36], [28, 30, 34, 33], [29, 31, 32, 35]], "intro": ["Hay 24 agujeros y 12 clavijas. Cada clavija atraviesa dos barras (una de abajo y una de arriba), así que en la solución todos los agujeros quedan alineados: 12 abajo y 12 arriba.", "Agujeros por barra: A=4, B=1, C=3, D=2, E=2, F=3, G=1, H=2, I=3, J=3.", "Primer filtro: elige 5 barras que sumen 12 agujeros para la capa de abajo. Hay 60 grupos así, pero no todos funcionan.", "Regla clave: los agujeros de la barra de arriba en una columna deben coincidir EXACTAMENTE con las filas donde la capa de abajo tiene agujero en esa columna.", "Las clavijas van al final: ponerlas antes te dice qué barra va abajo, y eso es justo lo difícil.", "Simetrías: girar todo 180° o voltear el rompecabezas completo (lo de arriba pasa abajo) da otra solución. Por eso las 64 soluciones se agrupan en 16 familias de 4."]};
+
+// ---------- Geometría de la cuadrícula inclinada ----------
+const K = 0.45, HZ = 0.9;            // inclinación del marco (rombo)
+const W = 0.46, T = 0.22;            // medio ancho y grosor de barra
+const PEG_R = 0.15, HOLE_R = 0.2, PEG_TOP = 2 * T + 0.08;
+const LIFT = 0.9;
+const g = (c, r) => new THREE.Vector3(c + r * K, 0, r * HZ);
+const slotCenter = (role, i) => role === 'row' ? g(2, i) : g(i, 2);
+const toGrid = v => { const r = v.z / HZ; return { c: v.x - r * K, r }; };
+
+// ---------- Escena ----------
+const stage = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+stage.prepend(renderer.domElement);
+const canvas = renderer.domElement;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x2a1f18);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 200);
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.maxPolarAngle = Math.PI * 0.47;
+controls.minDistance = 5; controls.maxDistance = 60;
+let portrait = false, camAnim = null, topView = false, userMovedCam = false;
+const VIEW3D = { dir: new THREE.Vector3(0, 0.7, 0.72).normalize() };
+const VIEWTOP = { dir: new THREE.Vector3(0, 1, 0.02).normalize() };
+// Encuadre: busca la distancia mínima a la que el marco y las bandejas caben en pantalla
+function sceneBox() {
+  const pts = [g(-0.9, -0.9), g(4.9, -0.9), g(4.9, 4.9), g(-0.9, 4.9)];
+  for (const b of BARS) for (const dx of [-2.8, 2.8]) for (const dz of [-0.5, 0.5]) pts.push(b.home.clone().add(new THREE.Vector3(dx, 0, dz)));
+  for (const p of PEGS) pts.push(p.home.clone());
+  return pts;
+}
+function viewFit(v) {
+  const pts = sceneBox();
+  const box = new THREE.Box3().setFromPoints(pts);
+  const tgt = box.getCenter(new THREE.Vector3()).setY(0);
+  const cam = camera.clone();
+  const fits = d => {
+    cam.position.copy(tgt).addScaledVector(v.dir, d); cam.lookAt(tgt); cam.updateMatrixWorld();
+    return pts.every(p => {
+      const q = p.clone().setY(0.3).project(cam);
+      return Math.abs(q.x) < 0.94 && q.y > -0.74 && q.y < 0.84;   // deja sitio a la barra de botones y al marcador
+    });
+  };
+  let lo = 4, hi = 120;
+  for (let i = 0; i < 30; i++) { const m = (lo + hi) / 2; fits(m) ? hi = m : lo = m; }
+  return { pos: tgt.clone().addScaledVector(v.dir, hi), tgt };
+}
+
+scene.add(new THREE.HemisphereLight(0xfff3e0, 0x3a2a20, 0.6));
+const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+sun.position.set(-4, 12, 7); sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -14, right: 16, top: 12, bottom: -12 });
+sun.shadow.bias = -0.0005;
+scene.add(sun);
+
+// Textura de madera procedimental
+function woodTexture(hex, seed = 1) {
+  const cv = document.createElement('canvas'); cv.width = cv.height = 256;
+  const x = cv.getContext('2d');
+  x.fillStyle = hex; x.fillRect(0, 0, 256, 256);
+  let s = seed * 9301 + 49297;
+  const rnd = () => (s = (s * 9301 + 49297) % 233280) / 233280;
+  for (let i = 0; i < 70; i++) {
+    const y0 = rnd() * 256, amp = 2 + rnd() * 6, fr = 0.01 + rnd() * 0.03, dark = rnd() < 0.6;
+    x.strokeStyle = dark ? `rgba(0,0,0,${0.05 + rnd() * 0.18})` : `rgba(255,235,200,${0.04 + rnd() * 0.08})`;
+    x.lineWidth = 0.6 + rnd() * 2.2;
+    x.beginPath();
+    for (let px = 0; px <= 256; px += 4) {
+      const py = y0 + Math.sin(px * fr + i) * amp;
+      px ? x.lineTo(px, py) : x.moveTo(px, py);
+    }
+    x.stroke();
+  }
+  const t = new THREE.CanvasTexture(cv);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  return t;
+}
+
+// Mesa
+const tableTex = woodTexture('#9a6234', 7); tableTex.repeat.set(4, 4);
+const table = new THREE.Mesh(new THREE.PlaneGeometry(90, 90),
+  new THREE.MeshStandardMaterial({ map: tableTex, roughness: 0.7 }));
+table.rotation.x = -Math.PI / 2; table.position.y = -0.13; table.receiveShadow = true;
+scene.add(table);
+
+function shapeFrom(pts) {
+  const s = new THREE.Shape();
+  pts.forEach((p, i) => i ? s.lineTo(p.x, -p.z) : s.moveTo(p.x, -p.z));
+  s.closePath();
+  return s;
+}
+function extrude(shape, depth, bevel = 0.02) {
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: depth - 2 * bevel, bevelEnabled: bevel > 0, bevelThickness: bevel, bevelSize: bevel,
+    bevelSegments: 2, curveSegments: 28,
+  });
+  geo.rotateX(-Math.PI / 2);
+  geo.translate(0, bevel, 0);
+  return geo;
+}
+
+// Marco
+const base = new THREE.Mesh(
+  extrude(shapeFrom([g(-0.85, -0.85), g(4.85, -0.85), g(4.85, 4.85), g(-0.85, 4.85)]), 0.12, 0.015),
+  new THREE.MeshStandardMaterial({ map: woodTexture('#2b1912', 3), roughness: 0.55 }));
+base.position.y = -0.12; base.receiveShadow = true; base.castShadow = true;
+scene.add(base);
+{
+  const pts = [];
+  for (let r = 0; r <= 5; r++) pts.push(g(-0.5, r - 0.5), g(4.5, r - 0.5));
+  for (let c = 0; c <= 5; c++) pts.push(g(c - 0.5, -0.5), g(c - 0.5, 4.5));
+  const ls = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0x5a3d2c }));
+  ls.position.y = 0.002; scene.add(ls);
+}
+const metal = new THREE.MeshStandardMaterial({ color: 0xd6dadf, metalness: 0.95, roughness: 0.28 });
+function wire(pts2d) {
+  const h = 2 * T + 0.16, path = new THREE.CurvePath();
+  const P = pts2d.map(([c, r]) => g(c, r));
+  const pts = [P[0].clone(), P[0].clone().setY(h), ...P.slice(1, -1).map(p => p.clone().setY(h)),
+               P.at(-1).clone().setY(h), P.at(-1).clone()];
+  for (let i = 0; i < pts.length - 1; i++) path.add(new THREE.LineCurve3(pts[i], pts[i + 1]));
+  const m = new THREE.Mesh(new THREE.TubeGeometry(path, 120, 0.035, 8, false), metal);
+  m.castShadow = true; scene.add(m);
+}
+wire([[-0.68, 4.3], [-0.68, -0.68], [4.3, -0.68]]);
+wire([[4.68, -0.3], [4.68, 4.68], [-0.3, 4.68]]);
+
+// Etiquetas
+function label(text, bg, fg, scale = 0.42) {
+  const cv = document.createElement('canvas'); cv.width = cv.height = 128;
+  const x = cv.getContext('2d');
+  x.fillStyle = bg; x.beginPath(); x.arc(64, 64, 58, 0, Math.PI * 2); x.fill();
+  x.lineWidth = 6; x.strokeStyle = 'rgba(255,255,255,.85)'; x.stroke();
+  x.fillStyle = fg; x.font = 'bold 64px system-ui, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.fillText(text, 64, 68);
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false }));
+  sp.scale.set(scale, scale, 1); sp.renderOrder = 10;
+  return sp;
+}
+const labels = [];
+for (let i = 0; i < 5; i++) {
+  const a = label('F' + (i + 1), '#00000088', '#f3e6d4', 0.34); a.position.copy(g(5.35, i)).setY(0.15);
+  const b = label('C' + (i + 1), '#00000088', '#f3e6d4', 0.34); b.position.copy(g(i, 5.4)).setY(0.15);
+  scene.add(a, b); labels.push(a, b);
+}
+
+// Marcas de alineación (una por casilla)
+const markGeo = new THREE.CircleGeometry(HOLE_R * 0.9, 24).rotateX(-Math.PI / 2);
+const markOk = new THREE.MeshBasicMaterial({ color: 0x3fae6b, transparent: true, opacity: 0.85, depthWrite: false });
+const markBad = new THREE.MeshBasicMaterial({ color: 0xd9483b, transparent: true, opacity: 0.85, depthWrite: false });
+const marks = [];
+for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) {
+  const m = new THREE.Mesh(markGeo, markOk); m.position.copy(g(c, r)); m.visible = false; m.renderOrder = 5;
+  scene.add(m); marks.push(m);
+}
+
+// ---------- Barras ----------
+// Cada barra tiene dos formas: "fila" (abajo) y "columna" (arriba, la barra volteada).
+const bars = {}, pickables = [];
+function makeForm(def, role, mat) {
+  const grp = new THREE.Group();
+  const long = role === 'row' ? (a, b) => g(a, b) : (a, b) => g(b, a);   // (a = a lo largo, b = a lo ancho)
+  const shape = shapeFrom([long(-2.5, -W), long(2.5, -W), long(2.5, W), long(-2.5, W)]);
+  for (const j of def.pos) {
+    const c = long(j - 2, 0), hole = new THREE.Path();
+    hole.absarc(c.x, -c.z, HOLE_R, 0, Math.PI * 2, true);
+    shape.holes.push(hole);
+  }
+  const body = new THREE.Mesh(extrude(shape, T), mat);
+  body.castShadow = body.receiveShadow = true;
+  body.userData.bar = def.id;
+  pickables.push(body);
+  const lb = label(def.id, def.color, '#fff');
+  lb.position.copy(long(-2.95, 0)).setY(0.25);
+  labels.push(lb);
+  grp.add(body, lb);
+  return grp;
+}
+function makeBar(def, idx) {
+  const grp = new THREE.Group();
+  const texRow = woodTexture(def.color, idx + 1); texRow.repeat.set(0.35, 1.6);
+  const texCol = texRow.clone(); texCol.rotation = Math.atan2(HZ, K) - Math.PI / 2; texCol.needsUpdate = true;
+  const matRow = new THREE.MeshStandardMaterial({ map: texRow, roughness: 0.62 });
+  const matCol = new THREE.MeshStandardMaterial({ map: texCol, roughness: 0.62 });
+  const forms = { row: makeForm(def, 'row', matRow), col: makeForm(def, 'col', matCol) };
+  forms.col.visible = false;
+  grp.add(forms.row, forms.col);
+  scene.add(grp);
+  const b = {
+    id: def.id, def, grp, forms, mats: [matRow, matCol], form: 'row', role: null, slot: null, flip: 0, rot: 0,
+    target: new THREE.Vector3(), home: new THREE.Vector3(), liftUntil: 0, pending: null,
+  };
+  bars[def.id] = b;
+  return b;
+}
+const BARS = DATA.bars.map(makeBar);
+
+// ---------- Clavijas ----------
+const pegGeo = new THREE.CylinderGeometry(PEG_R, PEG_R, PEG_TOP - 0.03, 28);
+const PEGS = [];
+for (let i = 0; i < DATA.pegs; i++) {
+  const m = new THREE.Mesh(pegGeo, metal);
+  m.castShadow = true; m.userData.peg = i;
+  scene.add(m); pickables.push(m);
+  PEGS.push({ i, mesh: m, cell: null, target: new THREE.Vector3(), home: new THREE.Vector3(), pending: null });
+}
+
+// ---------- Bandejas ----------
+let homeOrder = [...BARS];
+function setHomes(order = homeOrder) {
+  homeOrder = order;
+  order.forEach((b, k) => {
+    const side = k < 5 ? 0 : 1, n = k % 5;
+    if (portrait) b.home.set(2.9, 0, 6.0 + k * 1.0);
+    else b.home.set(side ? 10.2 : -4.3, 0, -0.1 + n * 1.05);
+  });
+  PEGS.forEach((p, i) => {
+    if (portrait) p.home.set(1.6 + (i % 6) * 0.55 + Math.floor(i / 6) * 0.3, 0, -2.3 - Math.floor(i / 6) * 0.55);
+    else p.home.set(0.6 + (i % 6) * 0.55 + Math.floor(i / 6) * 0.3, 0, 5.4 + Math.floor(i / 6) * 0.55);
+  });
+}
+
+// ---------- Estado / reglas ----------
+const holesOf = b => new Set(b.def.pos.map(j => b.flip ? 4 - j : j));
+const occupant = (role, i) => BARS.find(b => b.role === role && b.slot === i);
+
+function cellInfo(r, c) {
+  const lo = occupant('row', r), hi = occupant('col', c);
+  const lh = !!lo && holesOf(lo).has(c), hh = !!hi && holesOf(hi).has(r);
+  return { lo, hi, lh, hh, aligned: !!(lo && hi && lh && hh), blocked: !!(lo && hi && lh !== hh) };
+}
+function analyze() {
+  let aligned = 0, blocked = 0;
+  for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) {
+    const k = cellInfo(r, c);
+    if (k.aligned) aligned++;
+    if (k.blocked) blocked++;
+  }
+  const placed = BARS.filter(b => b.role).length;
+  const pegsIn = PEGS.filter(p => p.cell).length;
+  return { aligned, blocked, placed, pegsIn, solved: placed === 10 && aligned === DATA.pegs && pegsIn === DATA.pegs };
+}
+
+// Quita las clavijas que ya no tienen un agujero alineado debajo
+function ejectLoosePegs() {
+  for (const p of PEGS) if (p.cell && !cellInfo(p.cell.r, p.cell.c).aligned) p.cell = null;
+}
+
+function layout() {
+  ejectLoosePegs();
+  const st = analyze();
+  const anyRow = BARS.some(b => b.role === 'row');
+  for (const b of BARS) {
+    if (drag?.bar === b && drag.moved) continue;
+    if (!b.role) b.target.copy(b.home);
+    else b.target.copy(slotCenter(b.role, b.slot)).setY(b.role === 'col' && anyRow ? T : 0);
+    setForm(b, b.role || 'row');
+  }
+  for (const p of PEGS) {
+    if (drag?.peg === p && drag.moved) continue;
+    if (p.cell) p.target.copy(g(p.cell.c, p.cell.r)).setY(0.03 + (PEG_TOP - 0.03) / 2);
+    else p.target.copy(p.home).setY((PEG_TOP - 0.03) / 2);
+  }
+  // Marcas
+  for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) {
+    const k = cellInfo(r, c), m = marks[r * 5 + c];
+    const peg = PEGS.some(p => p.cell && p.cell.r === r && p.cell.c === c);
+    m.visible = showMarks && ((k.aligned && !peg) || k.blocked);
+    m.material = k.aligned ? markOk : markBad;
+    m.position.y = (k.hi ? 2 * T : T) + 0.004;
+  }
+  for (const b of BARS) for (const m of b.mats) m.emissive.setHex(0);
+
+  $('status').textContent = `${st.aligned}/${DATA.pegs} alineados · ${st.pegsIn}/${DATA.pegs} clavijas`;
+  const win = $('win');
+  if (st.solved && !solvedByPlayer) unlockSolutions();
+  if (st.solved) {
+    const si = matchSolution();
+    win.innerHTML = `Resuelto<br><span style="font-size:14px;font-weight:400">Solución ${si + 1} de ${DATA.solutions.length}</span>`;
+    win.style.display = 'block'; win.style.background = '';
+  } else if (st.placed === 10 && st.aligned === DATA.pegs) {
+    win.textContent = 'Ahora mete las clavijas';
+    win.style.display = 'block'; win.style.background = 'var(--accent)';
+  } else if (!flashing) win.style.display = 'none';
+}
+
+function setForm(b, form) {
+  if (b.form === form) return;
+  b.form = form;
+  b.forms.row.visible = form === 'row';
+  b.forms.col.visible = form === 'col';
+  b.liftUntil = Math.max(b.liftUntil, performance.now() + 300);
+}
+function setFlip(b, f) {
+  if (b.flip !== f) { b.flip = f; b.rot += Math.PI; b.liftUntil = performance.now() + 450; }
+}
+function flipBar(b) { setFlip(b, 1 - b.flip); layout(); }
+function turnBar(b) {
+  // Voltear: cambia de capa (fila <-> columna) en el mismo número de ranura si está libre
+  if (!b.role) { setForm(b, b.form === 'row' ? 'col' : 'row'); return; }
+  const role = b.role === 'row' ? 'col' : 'row';
+  const occ = occupant(role, b.slot);
+  if (occ) { occ.role = null; occ.slot = null; }
+  b.role = role;
+  layout();
+}
+
+function stateMatches(sol, b) {
+  for (const role of ['row', 'col']) {
+    const list = role === 'row' ? sol.rows : sol.cols;
+    const i = list.findIndex(x => x.id === b.id);
+    if (i >= 0) return b.role === role && b.slot === i && (b.def.sym || b.flip === list[i].flip);
+  }
+  return false;
+}
+function matchSolution() {
+  let best = 0, bs = -1;
+  DATA.solutions.forEach((s, i) => {
+    const n = BARS.filter(b => stateMatches(s, b)).length;
+    if (n > bs) { bs = n; best = i; }
+  });
+  return best;
+}
+
+// ---------- Interacción ----------
+let selected = null, drag = null, showMarks = true, flashing = false;
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -LIFT);
+function aim(e) {
+  const r = canvas.getBoundingClientRect();
+  ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+}
+function pickAt(e) {
+  aim(e);
+  return ray.intersectObjects(pickables, false).find(h => h.object.visible && h.object.parent.visible !== false);
+}
+function pick(e) {
+  let hit = pickAt(e);
+  // con el dedo se tolera un toque un poco fuera de la pieza
+  if (!hit && e.pointerType === 'touch') {
+    for (const [dx, dy] of [[0, -14], [0, 14], [-14, 0], [14, 0], [-12, -12], [12, 12], [-12, 12], [12, -12]]) {
+      hit = pickAt({ clientX: e.clientX + dx, clientY: e.clientY + dy });
+      if (hit) break;
+    }
+  }
+  if (!hit) return null;
+  const u = hit.object.userData;
+  return u.bar ? { bar: bars[u.bar] } : { peg: PEGS[u.peg] };
+}
+function planePoint() {
+  const pt = new THREE.Vector3();
+  return ray.ray.intersectPlane(dragPlane, pt) ? pt : null;
+}
+
+canvas.addEventListener('pointerdown', e => {
+  if (e.button !== 0) return;
+  const hit = pick(e);
+  if (!hit) return;
+  e.stopImmediatePropagation(); e.preventDefault();
+  const obj = hit.bar || hit.peg, pos = (hit.bar ? obj.grp : obj.mesh).position;
+  const pt = planePoint() || pos.clone();
+  drag = { ...hit, x: e.clientX, y: e.clientY, moved: false, off: pos.clone().sub(pt).setY(0),
+           prev: hit.bar ? { role: obj.role, slot: obj.slot } : null };
+  try { canvas.setPointerCapture(e.pointerId); } catch {}
+  if (hit.bar) selected = hit.bar;
+  layout();
+}, { capture: true });
+
+canvas.addEventListener('pointermove', e => {
+  if (!drag) { canvas.style.cursor = pick(e) ? 'grab' : 'default'; return; }
+  e.stopImmediatePropagation();
+  if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 5) return;
+  if (!drag.moved) {
+    drag.moved = true; stopSteps();
+    if (drag.bar) { drag.bar.role = null; drag.bar.slot = null; }
+    if (drag.peg) drag.peg.cell = null;
+    layout();
+  }
+  aim(e);
+  const pt = planePoint(); if (!pt) return;
+  const t = pt.add(drag.off);
+  if (drag.bar) {
+    drag.bar.target.copy(t).setY(LIFT);
+    const s = nearestSlot(drag.bar, t);
+    setForm(drag.bar, s ? s.role : drag.bar.form);
+  } else drag.peg.target.copy(t).setY(LIFT + 0.4);
+  canvas.style.cursor = 'grabbing';
+}, { capture: true });
+
+// Ranura más cercana; se prefiere la capa con la forma actual de la barra
+function nearestSlot(b, p) {
+  let best = null, bd = 1e9;
+  for (const role of ['row', 'col']) for (let i = 0; i < 5; i++) {
+    const c = slotCenter(role, i);
+    const d = Math.hypot(c.x - p.x, c.z - p.z) + (role === b.form ? 0 : 0.35);
+    if (d < bd) { bd = d; best = { role, slot: i }; }
+  }
+  return bd < 1.0 ? best : null;
+}
+
+canvas.addEventListener('pointerup', e => {
+  if (!drag) return;
+  e.stopImmediatePropagation();
+  const d = drag; drag = null;
+  if (!d.moved) {
+    // doble toque / doble clic sobre la misma barra: girarla 180°
+    const now = performance.now();
+    if (d.bar && lastTap.bar === d.bar && now - lastTap.t < 380) { flipBar(d.bar); lastTap = {}; }
+    else lastTap = { bar: d.bar, t: now };
+    layout(); return;
+  }
+  if (d.bar) {
+    const b = d.bar, s = nearestSlot(b, b.target);
+    if (s) {
+      const occ = occupant(s.role, s.slot);
+      if (occ && occ !== b) { occ.role = d.prev.role; occ.slot = d.prev.slot; }
+      b.role = s.role; b.slot = s.slot;
+    }
+  } else {
+    const p = d.peg, gr = toGrid(p.target);
+    const r = Math.round(gr.r), c = Math.round(gr.c);
+    const near = Math.hypot(gr.r - r, gr.c - c) < 0.5 && r >= 0 && r < 5 && c >= 0 && c < 5;
+    const taken = PEGS.some(q => q !== p && q.cell && q.cell.r === r && q.cell.c === c);
+    if (near && !taken && cellInfo(r, c).aligned) p.cell = { r, c };
+    else if (near) flash(cellInfo(r, c).aligned ? 'Ya tiene clavija' : 'No hay agujero alineado');
+  }
+  layout();
+}, { capture: true });
+
+let lastTap = {};
+addEventListener('keydown', e => {
+  if (e.target.closest?.('input,textarea')) return;
+  if ((e.key === 'r' || e.key === 'R') && selected) flipBar(selected);
+  if ((e.key === 'v' || e.key === 'V') && selected) { turnBar(selected); layout(); }
+  if (e.key === 'Escape') { selected = null; layout(); }
+});
+
+// ---------- Botones ----------
+const $ = id => document.getElementById(id);
+$('bFlip').onclick = () => selected ? flipBar(selected) : flash('Toca una barra');
+$('bTurn').onclick = () => { if (!selected) return flash('Toca una barra'); turnBar(selected); layout(); };
+$('bPegs').onclick = () => { stopSteps(); insertPegs(); };
+$('bShuffle').onclick = () => { stopSteps(); closeSteps(); shuffle(); };
+$('bHint').onclick = hint;
+$('bView').onclick = () => {
+  topView = !topView; userMovedCam = false;
+  camAnim = viewFit(topView ? VIEWTOP : VIEW3D);
+  $('bViewLbl').textContent = topView ? '3D' : 'Planta';
+};
+let showLabels = true;
+$('bLabels').onclick = () => {
+  showLabels = !showLabels;
+  labels.forEach(l => l.visible = showLabels);
+  $('bLabelsLbl').textContent = showLabels ? 'Etiquetas' : 'Sin etiquetas';
+};
+function flash(msg) {
+  const w = $('win'); w.style.display = 'block'; w.style.background = 'var(--accent)';
+  w.textContent = msg; flashing = true;
+  clearTimeout(flash.t);
+  flash.t = setTimeout(() => { flashing = false; w.style.background = ''; layout(); }, 1700);
+}
+
+function insertPegs(at = performance.now()) {
+  let free = PEGS.filter(p => !p.cell), k = 0, n = 0;
+  for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) {
+    if (!cellInfo(r, c).aligned || PEGS.some(p => p.cell && p.cell.r === r && p.cell.c === c)) continue;
+    const p = free[k++]; if (!p) break;
+    p.pending = { cell: { r, c }, at: at + n++ * 90 };
+  }
+  if (!n && !PEGS.some(p => p.cell)) flash('No hay agujeros alineados');
+}
+function removePegs() { PEGS.forEach(p => { p.cell = null; p.pending = null; }); }
+
+function shuffle() {
+  const sh = a => a.map(v => [Math.random(), v]).sort((x, y) => x[0] - y[0]).map(v => v[1]);
+  removePegs();
+  setHomes(sh(BARS));
+  BARS.forEach((b, k) => b.pending = { role: null, slot: null, flip: Math.random() < 0.5 ? 1 : 0, at: performance.now() + k * 40 });
+  selected = null;
+}
+
+// Aplica una disposición: mapa id -> {role, slot, flip}
+function applyLayout(map, stagger = 80, pegs = false) {
+  const t0 = performance.now();
+  let k = 0;
+  removePegs();
+  for (const b of BARS) {
+    const m = map[b.id] || { role: null, slot: null, flip: b.flip };
+    const changes = m.role !== b.role || m.slot !== b.slot || m.flip !== b.flip;
+    b.pending = { ...m, at: t0 + (changes ? k++ * stagger : 0) };
+  }
+  if (pegs) setTimeout(() => insertPegs(), k * stagger + 500);
+}
+function solutionMap(sol) {
+  const map = {};
+  sol.rows.forEach((x, i) => map[x.id] = { role: 'row', slot: i, flip: x.flip });
+  sol.cols.forEach((x, i) => map[x.id] = { role: 'col', slot: i, flip: x.flip });
+  return map;
+}
+function hint() {
+  stopSteps();
+  const si = matchSolution(), sol = DATA.solutions[si];
+  const step = sol.steps.find(s => (s.type === 'row' || s.type === 'col') && !stateMatches(sol, bars[s.id]));
+  showStepBox(false);
+  if (!step) {
+    insertPegs();
+    $('stepText').innerHTML = `<b>${sol.steps.at(-1).title}</b>`;
+    return;
+  }
+  const b = bars[step.id], occ = occupant(step.type, step.slot);
+  const t = performance.now();
+  if (occ && occ !== b) occ.pending = { role: null, slot: null, flip: occ.flip, at: t };
+  b.pending = { role: step.type, slot: step.slot, flip: step.flip, at: t + 150 };
+  selected = b;
+  $('stepText').innerHTML = `<b>Pista: ${step.title}</b>`;
+}
+
+// ---------- Panel ----------
+const barDef = id => DATA.bars.find(d => d.id === id);
+
+function miniGrid(sol) {
+  const cells = new Set();
+  sol.rows.forEach((x, r) => barDef(x.id).pos.forEach(j => cells.add(r * 5 + (x.flip ? 4 - j : j))));
+  const sw = id => `<span class="sw" style="background:${barDef(id).color}"></span>`;
+  let h = '<div class="scrollx"><table class="mini"><tr><th></th>' + sol.cols.map(x => `<th>${sw(x.id)}${x.id}${x.flip ? '↑' : '↓'}</th>`).join('') + '</tr>';
+  sol.rows.forEach((x, r) => {
+    h += `<tr><th>${sw(x.id)}${x.id}${x.flip ? '←' : '→'}</th>`;
+    for (let c = 0; c < 5; c++) h += `<td class="${cells.has(r * 5 + c) ? 'peg' : ''}"></td>`;
+    h += '</tr>';
+  });
+  return h + '</table></div>';
+}
+// Las soluciones quedan ocultas hasta que el jugador lo resuelve (se recuerda en este navegador)
+let solvedByPlayer = false;
+function unlockSolutions() {
+  solvedByPlayer = true;
+  $('solLocked').hidden = true;
+  $('solList').hidden = false;
+  try { localStorage.setItem('rompecabezas-resuelto', '1'); } catch {}
+}
+try { if (localStorage.getItem('rompecabezas-resuelto') === '1') queueMicrotask(unlockSolutions); } catch {}
+
+const VARIANT_NAMES =['Tal cual', 'Girada 180°', 'Volteada', 'Volteada y girada'];
+let famView = DATA.families.map(m => m[0]);   // solución visible por familia
+function renderSolutions() {
+  $('solList').innerHTML = DATA.families.map((members, f) => {
+    const si = famView[f], s = DATA.solutions[si];
+    return `<div class="card" id="fam${f}">
+      <h3>${f + 1}</h3>
+      ${miniGrid(s)}
+      <div class="row" style="margin-bottom:8px">${members.map((m, k) =>
+        `<button class="small${m === si ? ' primary' : ''}" data-var="${f}:${m}">${VARIANT_NAMES[k] || k + 1}</button>`).join('')}</div>
+      <div class="row">
+        <button data-show="${si}">Mostrar</button>
+        <button data-steps="${si}">Paso a paso</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+renderSolutions();
+$('solList').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.var) {
+    const [f, m] = b.dataset.var.split(':').map(Number);
+    famView[f] = m; renderSolutions(); markCard(f);
+    stopSteps(); applyLayout(solutionMap(DATA.solutions[m]), 80, true);
+  }
+  if (b.dataset.show) {
+    stopSteps(); closeSteps();
+    markCard(DATA.solutions[+b.dataset.show].family);
+    applyLayout(solutionMap(DATA.solutions[+b.dataset.show]), 80, true);
+  }
+  if (b.dataset.steps) startSteps(+b.dataset.steps);
+});
+function markCard(f) { document.querySelectorAll('.card').forEach(c => c.classList.toggle('active', c.id === 'fam' + f)); }
+
+// ---------- Estrategia paso a paso ----------
+let steps = null, playTimer = null;
+function showStepBox(withButtons) {
+  $('stepBox').style.display = 'block';
+  $('stepBtns').style.display = withButtons ? '' : 'none';
+}
+function startSteps(i) {
+  steps = { i, k: 0 };
+  markCard(DATA.solutions[i].family);
+  showStepBox(true);
+  $('stepBox').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  showStep();
+}
+function showStep() {
+  const sol = DATA.solutions[steps.i], n = sol.steps.length, k = steps.k;
+  const done = sol.steps.slice(0, k);
+  const map = {};
+  for (const s of done) if (s.type === 'row' || s.type === 'col') map[s.id] = { role: s.type, slot: s.slot, flip: s.flip };
+  // Tras el paso de separar, la bandeja muestra los dos grupos
+  if (k >= 1) {
+    const lo = sol.rows.map(x => bars[x.id]), hi = sol.cols.map(x => bars[x.id]);
+    setHomes([...lo, ...hi]);
+  }
+  applyLayout(map, 60, done.some(s => s.type === 'pegs'));
+  const cur = sol.steps[k - 1];
+  selected = cur?.id ? bars[cur.id] : null;
+  $('stepText').innerHTML = k === 0
+    ? `<b>Solución ${steps.i + 1}</b>Barras sueltas.`
+    : `<b>${k}/${n} · ${cur.title}</b>${cur.text}`;
+  $('bPrev').disabled = k === 0;
+  $('bNext').disabled = k === n;
+}
+function stopSteps() {
+  if (playTimer) { clearInterval(playTimer); playTimer = null; $('bPlay').textContent = 'Reproducir'; }
+}
+function closeSteps() { steps = null; $('stepBox').style.display = 'none'; }
+$('bPrev').onclick = () => { stopSteps(); if (steps && steps.k > 0) { steps.k--; showStep(); } };
+$('bNext').onclick = () => { stopSteps(); if (steps && steps.k < DATA.solutions[steps.i].steps.length) { steps.k++; showStep(); } };
+$('bPlay').onclick = () => {
+  if (playTimer) return stopSteps();
+  if (!steps) return;
+  if (steps.k >= DATA.solutions[steps.i].steps.length) { steps.k = 0; showStep(); }
+  $('bPlay').textContent = 'Pausa';
+  playTimer = setInterval(() => {
+    if (steps.k >= DATA.solutions[steps.i].steps.length) return stopSteps();
+    steps.k++; showStep();
+  }, 2400);
+};
+$('bClose').onclick = () => { stopSteps(); closeSteps(); markCard(-1); };
+
+// ---------- Bucle ----------
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+  if ((w / h < 0.95) !== portrait) { portrait = !portrait; setHomes(); layout(); }
+  if (!userMovedCam) { const f = viewFit(topView ? VIEWTOP : VIEW3D); camera.position.copy(f.pos); controls.target.copy(f.tgt); }
+}
+controls.addEventListener('start', () => { userMovedCam = true; camAnim = null; });
+new ResizeObserver(resize).observe(stage);
+
+let last = performance.now();
+function tick(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const a = 1 - Math.exp(-dt * 11);
+  let changed = false;
+  for (const b of BARS) if (b.pending && now >= b.pending.at) {
+    setFlip(b, b.pending.flip); b.role = b.pending.role; b.slot = b.pending.slot; b.pending = null;
+    b.liftUntil = Math.max(b.liftUntil, now + 350); changed = true;
+  }
+  for (const p of PEGS) if (p.pending && now >= p.pending.at) {
+    if (cellInfo(p.pending.cell.r, p.pending.cell.c).aligned) p.cell = p.pending.cell;
+    p.pending = null; changed = true;
+  }
+  if (changed) layout();
+  for (const b of BARS) {
+    const t = b.target.clone();
+    if (now < b.liftUntil && drag?.bar !== b) t.y = Math.max(t.y, LIFT);
+    b.grp.position.lerp(t, a);
+    b.grp.rotation.y += (b.rot - b.grp.rotation.y) * a;
+  }
+  for (const p of PEGS) {
+    // las clavijas bajan en vertical al final del recorrido
+    const t = p.target.clone(), m = p.mesh.position;
+    if (drag?.peg !== p && Math.hypot(t.x - m.x, t.z - m.z) > 0.05) t.y = Math.max(t.y, PEG_TOP + 0.6);
+    m.lerp(t, a);
+  }
+  if (selected) {
+    const s = 0.1 + 0.07 * Math.sin(now / 180);
+    selected.mats.forEach(m => m.emissive.setRGB(s, s * 0.7, 0));
+  }
+  if (camAnim) {
+    camera.position.lerp(camAnim.pos, a * 0.7); controls.target.lerp(camAnim.tgt, a * 0.7);
+    if (camera.position.distanceTo(camAnim.pos) < 0.02) camAnim = null;
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+
+setHomes();
+shuffle();
+resize();
+layout();
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
