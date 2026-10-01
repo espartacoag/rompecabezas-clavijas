@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Rompecabezas de Clavijas</title>
 <style>
-  /* Layout: escena 3D a pantalla completa; menú desplegable arriba a la derecha; soluciones en un panel que se abre al ganar */
+  /* Layout: escena 3D a pantalla completa; menú desplegable abajo a la izquierda; soluciones en un panel que se abre al ganar */
   :root {
     --panel: #fffaf2; --ink: #2b211a; --muted: #7a6a5c; --line: #e3d7c6;
     --accent: #a0522d; --accent-ink: #fff; --ok: #2f7d4f; --chip: #f1e6d6;
@@ -36,9 +36,10 @@
     left: 12px; padding: 8px 12px; border-radius: 10px; background: var(--glass); border: 1px solid var(--line);
     font-size: 13px; font-variant-numeric: tabular-nums; pointer-events: none;
   }
-  #menuWrap { right: 12px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+  #menuWrap { position: absolute; left: 12px; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column-reverse; align-items: flex-start; gap: 8px; }
   #menu {
     display: flex; flex-direction: column; gap: 2px; padding: 6px; min-width: 190px;
+    max-height: calc(100dvh - 90px); overflow-y: auto; touch-action: pan-y;
     background: var(--glass); border: 1px solid var(--line); border-radius: 12px;
     box-shadow: 0 10px 30px rgba(0,0,0,.25);
   }
@@ -101,7 +102,7 @@
 <div id="stage">
   <div id="status" class="float"></div>
   <div id="win"></div>
-  <div id="menuWrap" class="float">
+  <div id="menuWrap">
     <button id="bMenu" aria-expanded="false" aria-controls="menu">Menú</button>
     <div id="menu" hidden>
       <button id="bFlip">Girar <kbd>R</kbd></button>
