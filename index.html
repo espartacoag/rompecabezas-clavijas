@@ -48,18 +48,22 @@
     font-variant-numeric: tabular-nums; pointer-events: none;
   }
   #solved svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
-  #menuWrap { position: fixed; left: 12px; bottom: calc(var(--dh, 0px) + 12px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column-reverse; align-items: flex-start; gap: 8px; }
+  #menuWrap { position: fixed; left: 12px; bottom: calc(var(--dh, 0px) + 12px + env(safe-area-inset-bottom, 0px)); display: flex; align-items: center; gap: 8px; }
+  #bMenu { width: 48px; height: 48px; border-radius: 50%; padding: 0; display: grid; place-items: center; background: var(--glass); box-shadow: 0 6px 18px rgba(0,0,0,.25); flex: 0 0 auto; }
+  #bMenu svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; transition: transform .2s; }
+  #bMenu[aria-expanded="true"] svg { transform: rotate(180deg); }
   #menu {
-    display: flex; flex-direction: column; gap: 2px; padding: 6px; min-width: 190px;
-    max-height: calc(100dvh - 90px); overflow-y: auto; touch-action: pan-y;
+    display: flex; gap: 2px; padding: 4px; min-width: 0; max-width: calc(100vw - 84px);
+    overflow-x: auto; touch-action: pan-x; scrollbar-width: none;
     background: var(--glass); border: 1px solid var(--line); border-radius: 12px;
     box-shadow: 0 10px 30px rgba(0,0,0,.25);
   }
-  #menu button { border: 0; background: transparent; text-align: left; display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 38px; padding: 6px 10px; }
+  #menu::-webkit-scrollbar { display: none; }
+  #menu button { border: 0; background: transparent; white-space: nowrap; flex: 0 0 auto; min-height: 40px; padding: 6px 12px; }
   #menu button:hover:not(:disabled) { background: var(--chip); }
   #menu button.on { color: var(--accent); }
-  #menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 6px; width: auto; }
-  #menu .hint { color: var(--muted); font-size: 12px; padding: 4px 10px 6px; margin: 0; max-width: 200px; }
+  #menu hr { border: 0; border-left: 1px solid var(--line); margin: 6px 2px; }
+  #menu .hint { display: none; }
   #win {
     position: absolute; left: 50%; top: calc(64px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); display: none;
     background: var(--ok); color: #fff; padding: 12px 18px; border-radius: 14px; font-size: 16px; font-weight: 600;
@@ -104,13 +108,6 @@
   #stepText b { display: block; }
   kbd { color: var(--muted); font: 12px var(--body); }
   @media (max-width: 700px) { kbd { display: none; } }
-  /* Celular: el menú se abre como barra horizontal sobre el botón */
-  @media (max-width: 600px) {
-    #menu { flex-direction: row; overflow-x: auto; max-width: calc(100vw - 24px); min-width: 0; touch-action: pan-x; scrollbar-width: none; }
-    #menu::-webkit-scrollbar { display: none; }
-    #menu button { white-space: nowrap; flex: 0 0 auto; }
-    #menu hr, #menu .hint { display: none; }
-  }
 </style>
 <script type="importmap">
 { "imports": {
@@ -130,7 +127,7 @@
   </div>
 </div>
   <div id="menuWrap">
-    <button id="bMenu" aria-expanded="false" aria-controls="menu">Menú</button>
+    <button id="bMenu" aria-expanded="false" aria-controls="menu" aria-label="Menú"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
     <div id="menu" hidden>
       <button id="bPegs">Meter clavijas</button>
       <button id="bHint">Pista</button>
@@ -777,13 +774,11 @@ function refitSoon() { userMovedCam = false; syncDrawer(); }
 new ResizeObserver(syncDrawer).observe($('drawer'));
 $('bSols').onclick = openDrawer;
 $('bCloseDrawer').onclick = () => { stopSteps(); closeSteps(); markCard(-1); $('drawer').hidden = true; refitSoon(); };
-// Menú desplegable: queda abierto hasta tocar "Menú" otra vez, para poder girar mientras se sostiene una pieza
+// Menú desplegable: queda abierto hasta tocar la flecha otra vez
 function setMenu(open) {
-  $('menu').hidden = !open; $('bMenu').setAttribute('aria-expanded', open); $('bMenu').classList.toggle('primary', open);
-  // la escena se recorta a la derecha del menú y se vuelve a centrar
-  const narrow = matchMedia('(max-width: 600px)').matches, root = document.documentElement.style;
-  root.setProperty('--ml', open && !narrow ? ($('menu').offsetWidth + 24) + 'px' : '0px');
-  root.setProperty('--mb', open && narrow ? ($('menuWrap').offsetHeight + 16) + 'px' : '0px');
+  $('menu').hidden = !open; $('bMenu').setAttribute('aria-expanded', open);
+  // el menú se abre hacia la derecha; la escena se recorta por encima de él y se vuelve a centrar
+  document.documentElement.style.setProperty('--mb', open ? ($('menuWrap').offsetHeight + 16) + 'px' : '0px');
   userMovedCam = false;
 }
 $('bMenu').onclick = () => setMenu($('menu').hidden);
