@@ -26,6 +26,12 @@
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
+  /* Botones de la pieza agarrada: a la derecha, a un tercio de altura para alcanzarlos con el pulgar */
+  #tools { position: absolute; right: 14px; top: 30%; display: flex; flex-direction: column; gap: 12px; }
+  #tools button { width: 52px; height: 52px; border-radius: 50%; padding: 0; display: grid; place-items: center;
+                  background: var(--glass); box-shadow: 0 6px 18px rgba(0,0,0,.25); }
+  #tools button:active { background: var(--accent); color: var(--accent-ink); }
+  #tools svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   html, body { margin: 0; height: 100%; overflow: hidden; }
   html { touch-action: none; }   /* sin zoom ni scroll de página; los gestos son de la escena */
   body { background: var(--scene); color: var(--ink); font: 14px/1.5 var(--body); }
@@ -111,12 +117,14 @@
 <div id="stage">
   <div id="status" class="float"></div>
   <div id="win"></div>
+  <div id="tools" hidden>
+    <button id="tFlip" aria-label="Girar 180°" title="Girar 180° (R)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg></button>
+    <button id="tTurn" aria-label="Voltear" title="Voltear arriba/abajo (V)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v14"/><path d="M4 15l3 3 3-3"/><path d="M17 20V6"/><path d="M14 9l3-3 3 3"/></svg></button>
+  </div>
 </div>
   <div id="menuWrap">
     <button id="bMenu" aria-expanded="false" aria-controls="menu">Menú</button>
     <div id="menu" hidden>
-      <button id="bFlip">Girar <kbd>R</kbd></button>
-      <button id="bTurn">Voltear <kbd>V</kbd></button>
       <button id="bPegs">Meter clavijas</button>
       <button id="bHint">Pista</button>
       <button id="bShuffle">Mezclar</button>
@@ -413,6 +421,7 @@ function ejectLoosePegs() {
 }
 
 function layout() {
+  $('tools').hidden = !selected;
   ejectLoosePegs();
   const st = analyze();
   const anyRow = BARS.some(b => b.role === 'row');
@@ -530,14 +539,14 @@ canvas.addEventListener('pointerdown', e => {
   if (drag) { e.stopImmediatePropagation(); e.preventDefault(); return; }
   if (e.button !== 0) return;
   const hit = pick(e);
-  if (!hit) return;
+  if (!hit) { if (selected) { selected = null; layout(); } return; }   // tocar el fondo suelta la selección
   e.stopImmediatePropagation(); e.preventDefault();
   const obj = hit.bar || hit.peg, pos = (hit.bar ? obj.grp : obj.mesh).position;
   const pt = planePoint() || pos.clone();
   drag = { ...hit, id: e.pointerId, x: e.clientX, y: e.clientY, moved: false, off: pos.clone().sub(pt).setY(0),
            prev: hit.bar ? { role: obj.role, slot: obj.slot } : null };
   try { canvas.setPointerCapture(e.pointerId); } catch {}
-  if (hit.bar) selected = hit.bar;
+  selected = hit.bar || null;
   layout();
 }, { capture: true });
 
@@ -619,8 +628,8 @@ addEventListener('keydown', e => {
 
 // ---------- Botones ----------
 const $ = id => document.getElementById(id);
-$('bFlip').onclick = () => selected ? flipBar(selected) : flash('Toca una barra');
-$('bTurn').onclick = () => { if (!selected) return flash('Toca una barra'); turnBar(selected); layout(); };
+$('tFlip').onclick = () => { if (selected) flipBar(selected); };
+$('tTurn').onclick = () => { if (selected) { turnBar(selected); layout(); } };
 $('bPegs').onclick = () => { stopSteps(); insertPegs(); };
 $('bShuffle').onclick = () => { stopSteps(); closeSteps(); shuffle(); };
 $('bHint').onclick = hint;
